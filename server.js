@@ -18,17 +18,21 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const formationRoutes = require('./routes/formations');
 const formateurRoutes = require('./routes/formateurs');
 const categorieRoutes = require('./routes/categories');
-// const sousCategoriesRoutes = require('./routes/sousCategories'); // ⛔️ SUPPRIMER
+//const sousCategoriesRoutes = require('./routes/sousCategories'); 
 const uploadRoutes = require('./routes/upload');
 const videosRoutes = require('./routes/videos');
+const dureeRoutes = require('./routes/duree');
+const typeFormationRoutes = require('./routes/typeFormation');
 
 // Utilisation des routes
 app.use('/api/formations', formationRoutes);
 app.use('/api/formateurs', formateurRoutes);
 app.use('/api/categories', categorieRoutes);
-// app.use('/api/sous-categories', sousCategoriesRoutes); // ⛔️ SUPPRIMER
+//app.use('/api/sous-categories', sousCategoriesRoutes); 
 app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videosRoutes);
+app.use('/api/durees', dureeRoutes);
+app.use('/api/types-formation', typeFormationRoutes);
 
 // Route de test
 app.get('/', (req, res) => {
