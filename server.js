@@ -23,6 +23,7 @@ const uploadRoutes = require('./routes/upload');
 const videosRoutes = require('./routes/videos');
 const dureeRoutes = require('./routes/duree');
 const typeFormationRoutes = require('./routes/typeFormation');
+const adherentRoutes = require('./routes/adherentRoutes');
 
 // Utilisation des routes
 app.use('/api/formations', formationRoutes);
@@ -33,6 +34,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videosRoutes);
 app.use('/api/durees', dureeRoutes);
 app.use('/api/types-formation', typeFormationRoutes);
+app.use('/api/adherents', adherentRoutes);
 
 // Route de test
 app.get('/', (req, res) => {
