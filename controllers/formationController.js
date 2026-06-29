@@ -75,8 +75,25 @@ const createFormation = async (req, res) => {
             descri_ar,
             id_categorie,
             id_formateur,
-            photo
+            photo,
+            nbr_heur,
+            nbr_seance,
+            nbr_jour,
+            repetitive,
+            jour_semaine
         } = req.body;
+
+        console.log('📝 [createFormation] Données reçues:', {
+            titre_fr,
+            titre_ar,
+            id_type_formation,
+            id_duree,
+            nbr_heur,
+            nbr_seance,
+            nbr_jour,
+            repetitive,
+            jour_semaine
+        });
 
         if (!titre_fr || !titre_ar || !id_type_formation || !cible_fr || !id_duree || !prix || !descri_fr || !descri_ar) {
             return res.status(400).json({
@@ -91,10 +108,11 @@ const createFormation = async (req, res) => {
         }
 
         const [result] = await db.query(
-            `INSERT INTO formation 
-            (titre_fr, titre_ar, id_type_formation, cible_fr, cible_ar, id_duree, periode, date_debut, date_fin,
-             prix, discount, valeur_disc, descri_fr, descri_ar, id_categorie, id_formateur, photo, actif) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'oui')`,
+            `INSERT INTO formation (
+                titre_fr, titre_ar, id_type_formation, cible_fr, cible_ar, id_duree, periode, date_debut, date_fin,
+                prix, discount, valeur_disc, descri_fr, descri_ar, id_categorie, id_formateur, photo, actif,
+                nbr_heur, nbr_seance, nbr_jour, repetitive, jour_semaine
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'oui', ?, ?, ?, ?, ?)`,
             [
                 titre_fr,
                 titre_ar,
@@ -112,13 +130,19 @@ const createFormation = async (req, res) => {
                 descri_ar,
                 id_categorie || null,
                 id_formateur || null,
-                photo || null
+                photo || null,
+                nbr_heur ?? 0,
+                nbr_seance ?? 0,
+                nbr_jour ?? 0,
+                repetitive ?? 'non',
+                jour_semaine ?? null
             ]
         );
 
+        console.log(`✅ [createFormation] Formation créée avec l'ID: ${result.insertId}`);
         res.json({ success: true, message: 'Formation créée avec succès', id: result.insertId });
     } catch (error) {
-        console.error('Erreur createFormation:', error);
+        console.error('❌ Erreur createFormation:', error);
         res.status(500).json({ success: false, message: 'Erreur serveur', error: error.sqlMessage || error.message });
     }
 };
@@ -143,8 +167,15 @@ const updateFormation = async (req, res) => {
             id_categorie,
             id_formateur,
             photo,
-            actif
+            actif,
+            nbr_heur,
+            nbr_seance,
+            nbr_jour,
+            repetitive,
+            jour_semaine
         } = req.body;
+
+        console.log(`📝 [updateFormation] Mise à jour formation ID: ${id}`);
 
         const [existing] = await db.query('SELECT id FROM formation WHERE id = ?', [id]);
         if (existing.length === 0) {
@@ -158,24 +189,12 @@ const updateFormation = async (req, res) => {
 
         const [result] = await db.query(
             `UPDATE formation SET 
-                titre_fr = ?, 
-                titre_ar = ?, 
-                id_type_formation = ?, 
-                cible_fr = ?, 
-                cible_ar = ?, 
-                id_duree = ?, 
-                periode = ?,
-                date_debut = ?,
-                date_fin = ?,
-                prix = ?, 
-                discount = ?, 
-                valeur_disc = ?, 
-                descri_fr = ?, 
-                descri_ar = ?, 
-                id_categorie = ?, 
-                id_formateur = ?, 
-                photo = ?,
-                actif = ?
+                titre_fr = ?, titre_ar = ?, id_type_formation = ?, 
+                cible_fr = ?, cible_ar = ?, id_duree = ?, periode = ?,
+                date_debut = ?, date_fin = ?, prix = ?, 
+                discount = ?, valeur_disc = ?, descri_fr = ?, descri_ar = ?, 
+                id_categorie = ?, id_formateur = ?, photo = ?, actif = ?,
+                nbr_heur = ?, nbr_seance = ?, nbr_jour = ?, repetitive = ?, jour_semaine = ?
             WHERE id = ?`,
             [
                 titre_fr,
@@ -196,6 +215,11 @@ const updateFormation = async (req, res) => {
                 id_formateur || null,
                 photo || null,
                 actif || 'oui',
+                nbr_heur ?? 0,
+                nbr_seance ?? 0,
+                nbr_jour ?? 0,
+                repetitive ?? 'non',
+                jour_semaine ?? null,
                 id
             ]
         );
@@ -204,9 +228,10 @@ const updateFormation = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Formation non trouvée' });
         }
 
+        console.log(`✅ [updateFormation] Formation ID ${id} mise à jour avec succès`);
         res.json({ success: true, message: 'Formation mise à jour avec succès', id });
     } catch (error) {
-        console.error('Erreur updateFormation:', error);
+        console.error('❌ Erreur updateFormation:', error);
         res.status(500).json({ success: false, message: 'Erreur serveur', error: error.sqlMessage || error.message });
     }
 };
