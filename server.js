@@ -43,6 +43,7 @@ let videosRoutes;
 let dureeRoutes;
 let typeFormationRoutes;
 let adherentRoutes;
+let chatbotRoutes; // 👈 NOUVEAU
 
 try {
     formationRoutes = require('./routes/formations');
@@ -100,6 +101,14 @@ try {
     console.error('   ❌ Erreur chargement adherentRoutes:', error.message);
 }
 
+// 👈 NOUVEAU : Import de la route chatbot
+try {
+    chatbotRoutes = require('./routes/chatbot');
+    console.log('   ✅ Route chatbot chargée');
+} catch (error) {
+    console.error('   ❌ Erreur chargement chatbot:', error.message);
+}
+
 // =============================================
 // UTILISATION DES ROUTES
 // =============================================
@@ -121,7 +130,8 @@ app.get('/api/test', (req, res) => {
             '/api/durees',
             '/api/duree',
             '/api/types-formation',
-            '/api/adherents'
+            '/api/adherents',
+            '/api/chatbot' // 👈 NOUVEAU
         ]
     });
 });
@@ -245,6 +255,17 @@ if (adherentRoutes) {
     console.log('   ⚠️ /api/adherents non enregistré (route manquante)');
 }
 
+// 👈 NOUVEAU : Chatbot routes
+if (chatbotRoutes) {
+    app.use('/api/chatbot', (req, res, next) => {
+        console.log(`📥 [chatbot] ${req.method} ${req.url}`);
+        next();
+    }, chatbotRoutes);
+    console.log('   ✅ /api/chatbot enregistré');
+} else {
+    console.log('   ⚠️ /api/chatbot non enregistré (route manquante)');
+}
+
 // =============================================
 // ROUTE D'ACCUEIL
 // =============================================
@@ -264,6 +285,7 @@ app.get('/', (req, res) => {
             { method: 'GET,POST,PUT,DELETE', path: '/api/duree', description: 'Gestion des durées (SANS "s") - REDIRECTION' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/types-formation', description: 'Gestion des types de formation' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/adherents', description: 'Gestion des adhérents' },
+            { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' } // 👈 NOUVEAU
         ]
     });
 });
@@ -286,7 +308,8 @@ app.use((req, res) => {
             '/api/durees',
             '/api/duree',
             '/api/types-formation',
-            '/api/adherents'
+            '/api/adherents',
+            '/api/chatbot' // 👈 NOUVEAU
         ]
     });
 });
@@ -318,6 +341,7 @@ console.log('   ✅ /api/durees (AVEC "s")');
 console.log('   ✅ /api/duree (SANS "s") - REDIRECTION');
 console.log('   ✅ /api/types-formation');
 console.log('   ✅ /api/adherents');
+console.log('   ✅ /api/chatbot'); // 👈 NOUVEAU
 console.log('   ✅ /');
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
@@ -326,6 +350,7 @@ app.listen(PORT, () => {
     console.log(`📋 Testez l'API: http://localhost:${PORT}/api/test`);
     console.log(`📋 Durées (avec s): http://localhost:${PORT}/api/durees`);
     console.log(`📋 Durées (sans s): http://localhost:${PORT}/api/duree`);
+    console.log(`📋 Chatbot: http://localhost:${PORT}/api/chatbot/categories`);
     console.log('\n💡 IMPORTANT:');
     console.log('   - Le frontend appelle /api/duree (sans "s")');
     console.log('   - Le backend utilise /api/durees (avec "s")');
