@@ -1,6 +1,19 @@
 // nafahat_api/controllers/formationController.js
 const db = require('../config/database');
 
+// =============================================
+// ✅ FONCTION UTILITAIRE POUR LE PRIX FINAL
+// =============================================
+const getPriceFinal = (prix_dt, discount, valeur_disc) => {
+    if (discount === 'oui' && valeur_disc !== null) {
+        return prix_dt - valeur_disc;
+    }
+    return prix_dt;
+};
+
+// =============================================
+// ✅ GET - Toutes les formations
+// =============================================
 const getAllFormations = async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -11,9 +24,9 @@ const getAllFormations = async (req, res) => {
                    form.nom_prenom_fr as formateur_nom_fr,
                    form.nom_prenom_ar as formateur_nom_ar,
                    CASE 
-                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix - f.valeur_disc
-                       ELSE f.prix
-                   END as prix_final
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
             FROM formation f
             LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
             LEFT JOIN duree d ON f.id_duree = d.id
@@ -28,6 +41,9 @@ const getAllFormations = async (req, res) => {
     }
 };
 
+// =============================================
+// ✅ GET - Formation par ID
+// =============================================
 const getFormationById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -39,9 +55,9 @@ const getFormationById = async (req, res) => {
                    form.nom_prenom_fr as formateur_nom_fr,
                    form.nom_prenom_ar as formateur_nom_ar,
                    CASE 
-                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix - f.valeur_disc
-                       ELSE f.prix
-                   END as prix_final
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
             FROM formation f
             LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
             LEFT JOIN duree d ON f.id_duree = d.id
@@ -57,6 +73,9 @@ const getFormationById = async (req, res) => {
     }
 };
 
+// =============================================
+// ✅ POST - Créer une formation
+// =============================================
 const createFormation = async (req, res) => {
     try {
         const {
@@ -68,7 +87,10 @@ const createFormation = async (req, res) => {
             id_duree,
             date_debut,
             date_fin,
-            prix,
+            // ✅ NOUVEAUX CHAMPS PRIX
+            prix_dt,
+            prix_eur,
+            prix_usd,
             discount,
             valeur_disc,
             descri_fr,
@@ -86,16 +108,15 @@ const createFormation = async (req, res) => {
         console.log('📝 [createFormation] Données reçues:', {
             titre_fr,
             titre_ar,
-            id_type_formation,
-            id_duree,
-            nbr_heur,
-            nbr_seance,
-            nbr_jour,
-            repetitive,
-            jour_semaine
+            prix_dt,
+            prix_eur,
+            prix_usd,
+            discount,
+            valeur_disc
         });
 
-        if (!titre_fr || !titre_ar || !id_type_formation || !cible_fr || !id_duree || !prix || !descri_fr || !descri_ar) {
+        // ✅ Validation des champs obligatoires
+        if (!titre_fr || !titre_ar || !id_type_formation || !cible_fr || !id_duree || !prix_dt || !descri_fr || !descri_ar) {
             return res.status(400).json({
                 success: false,
                 message: 'Champs obligatoires manquants'
@@ -107,12 +128,17 @@ const createFormation = async (req, res) => {
             periode = `${date_debut} - ${date_fin}`;
         }
 
+        // ✅ Requête INSERT avec les 3 prix
         const [result] = await db.query(
             `INSERT INTO formation (
-                titre_fr, titre_ar, id_type_formation, cible_fr, cible_ar, id_duree, periode, date_debut, date_fin,
-                prix, discount, valeur_disc, descri_fr, descri_ar, id_categorie, id_formateur, photo, actif,
+                titre_fr, titre_ar, id_type_formation, 
+                cible_fr, cible_ar, id_duree, periode, date_debut, date_fin,
+                prix_dt, prix_eur, prix_usd,
+                discount, valeur_disc, 
+                descri_fr, descri_ar, 
+                id_categorie, id_formateur, photo, actif,
                 nbr_heur, nbr_seance, nbr_jour, repetitive, jour_semaine
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'oui', ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'oui', ?, ?, ?, ?, ?)`,
             [
                 titre_fr,
                 titre_ar,
@@ -123,7 +149,9 @@ const createFormation = async (req, res) => {
                 periode,
                 date_debut || null,
                 date_fin || null,
-                prix,
+                prix_dt || 0,
+                prix_eur || 0,
+                prix_usd || 0,
                 discount || 'non',
                 valeur_disc || null,
                 descri_fr,
@@ -140,13 +168,24 @@ const createFormation = async (req, res) => {
         );
 
         console.log(`✅ [createFormation] Formation créée avec l'ID: ${result.insertId}`);
-        res.json({ success: true, message: 'Formation créée avec succès', id: result.insertId });
+        res.json({ 
+            success: true, 
+            message: 'Formation créée avec succès', 
+            id: result.insertId 
+        });
     } catch (error) {
         console.error('❌ Erreur createFormation:', error);
-        res.status(500).json({ success: false, message: 'Erreur serveur', error: error.sqlMessage || error.message });
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erreur serveur', 
+            error: error.sqlMessage || error.message 
+        });
     }
 };
 
+// =============================================
+// ✅ PUT - Mettre à jour une formation
+// =============================================
 const updateFormation = async (req, res) => {
     try {
         const { id } = req.params;
@@ -159,7 +198,10 @@ const updateFormation = async (req, res) => {
             id_duree,
             date_debut,
             date_fin,
-            prix,
+            // ✅ NOUVEAUX CHAMPS PRIX
+            prix_dt,
+            prix_eur,
+            prix_usd,
             discount,
             valeur_disc,
             descri_fr,
@@ -176,6 +218,7 @@ const updateFormation = async (req, res) => {
         } = req.body;
 
         console.log(`📝 [updateFormation] Mise à jour formation ID: ${id}`);
+        console.log('💰 Prix:', { prix_dt, prix_eur, prix_usd });
 
         const [existing] = await db.query('SELECT id FROM formation WHERE id = ?', [id]);
         if (existing.length === 0) {
@@ -187,12 +230,15 @@ const updateFormation = async (req, res) => {
             periode = `${date_debut} - ${date_fin}`;
         }
 
+        // ✅ Requête UPDATE avec les 3 prix
         const [result] = await db.query(
             `UPDATE formation SET 
                 titre_fr = ?, titre_ar = ?, id_type_formation = ?, 
                 cible_fr = ?, cible_ar = ?, id_duree = ?, periode = ?,
-                date_debut = ?, date_fin = ?, prix = ?, 
-                discount = ?, valeur_disc = ?, descri_fr = ?, descri_ar = ?, 
+                date_debut = ?, date_fin = ?, 
+                prix_dt = ?, prix_eur = ?, prix_usd = ?,
+                discount = ?, valeur_disc = ?, 
+                descri_fr = ?, descri_ar = ?, 
                 id_categorie = ?, id_formateur = ?, photo = ?, actif = ?,
                 nbr_heur = ?, nbr_seance = ?, nbr_jour = ?, repetitive = ?, jour_semaine = ?
             WHERE id = ?`,
@@ -206,7 +252,9 @@ const updateFormation = async (req, res) => {
                 periode,
                 date_debut || null,
                 date_fin || null,
-                prix,
+                prix_dt || 0,
+                prix_eur || 0,
+                prix_usd || 0,
                 discount || 'non',
                 valeur_disc || null,
                 descri_fr,
@@ -232,36 +280,17 @@ const updateFormation = async (req, res) => {
         res.json({ success: true, message: 'Formation mise à jour avec succès', id });
     } catch (error) {
         console.error('❌ Erreur updateFormation:', error);
-        res.status(500).json({ success: false, message: 'Erreur serveur', error: error.sqlMessage || error.message });
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erreur serveur', 
+            error: error.sqlMessage || error.message 
+        });
     }
 };
 
-const deleteFormation = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [existing] = await db.query('SELECT id FROM formation WHERE id = ?', [id]);
-        if (existing.length === 0) return res.status(404).json({ success: false, message: 'Formation non trouvée' });
-        await db.query('UPDATE formation SET actif = "non" WHERE id = ?', [id]);
-        res.json({ success: true, message: 'Formation désactivée avec succès' });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Erreur serveur' });
-    }
-};
-
-const hardDeleteFormation = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [existing] = await db.query('SELECT id FROM formation WHERE id = ?', [id]);
-        if (existing.length === 0) return res.status(404).json({ success: false, message: 'Formation non trouvée' });
-        await db.query('DELETE FROM formation WHERE id = ?', [id]);
-        res.json({ success: true, message: 'Formation supprimée définitivement' });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Erreur serveur' });
-    }
-};
-
+// =============================================
+// ✅ GET - Formations actives (avec les 3 prix)
+// =============================================
 const getActiveFormations = async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -272,9 +301,9 @@ const getActiveFormations = async (req, res) => {
                    form.nom_prenom_fr as formateur_nom_fr,
                    form.nom_prenom_ar as formateur_nom_ar,
                    CASE 
-                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix - f.valeur_disc
-                       ELSE f.prix
-                   END as prix_final
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
             FROM formation f
             LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
             LEFT JOIN duree d ON f.id_duree = d.id
@@ -290,6 +319,9 @@ const getActiveFormations = async (req, res) => {
     }
 };
 
+// =============================================
+// ✅ GET - Formations avec réduction
+// =============================================
 const getFormationsWithDiscount = async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -300,16 +332,16 @@ const getFormationsWithDiscount = async (req, res) => {
                    form.nom_prenom_fr as formateur_nom_fr,
                    form.nom_prenom_ar as formateur_nom_ar,
                    CASE 
-                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix - f.valeur_disc
-                       ELSE f.prix
-                   END as prix_final
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
             FROM formation f
             LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
             LEFT JOIN duree d ON f.id_duree = d.id
             LEFT JOIN categorie c ON f.id_categorie = c.id
             LEFT JOIN formateur form ON f.id_formateur = form.id
             WHERE f.discount = 'oui' AND f.actif = 'oui'
-            ORDER BY prix_final ASC
+            ORDER BY prix_final_dt ASC
         `);
         res.json({ success: true, data: rows });
     } catch (error) {
@@ -318,6 +350,9 @@ const getFormationsWithDiscount = async (req, res) => {
     }
 };
 
+// =============================================
+// ✅ GET - Formations par catégorie
+// =============================================
 const getFormationsByCategorie = async (req, res) => {
     try {
         const { id } = req.params;
@@ -329,9 +364,9 @@ const getFormationsByCategorie = async (req, res) => {
                    form.nom_prenom_fr as formateur_nom_fr,
                    form.nom_prenom_ar as formateur_nom_ar,
                    CASE 
-                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix - f.valeur_disc
-                       ELSE f.prix
-                   END as prix_final
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
             FROM formation f
             LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
             LEFT JOIN duree d ON f.id_duree = d.id
@@ -346,6 +381,9 @@ const getFormationsByCategorie = async (req, res) => {
     }
 };
 
+// =============================================
+// ✅ GET - Toutes les formations (Admin)
+// =============================================
 const getAllFormationsAdmin = async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -356,9 +394,9 @@ const getAllFormationsAdmin = async (req, res) => {
                    form.nom_prenom_fr as formateur_nom_fr,
                    form.nom_prenom_ar as formateur_nom_ar,
                    CASE 
-                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix - f.valeur_disc
-                       ELSE f.prix
-                   END as prix_final
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
             FROM formation f
             LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
             LEFT JOIN duree d ON f.id_duree = d.id
@@ -373,6 +411,350 @@ const getAllFormationsAdmin = async (req, res) => {
     }
 };
 
+// =============================================
+// ❌ DELETE - Désactiver une formation
+// =============================================
+const deleteFormation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [existing] = await db.query('SELECT id FROM formation WHERE id = ?', [id]);
+        if (existing.length === 0) return res.status(404).json({ success: false, message: 'Formation non trouvée' });
+        await db.query('UPDATE formation SET actif = "non" WHERE id = ?', [id]);
+        res.json({ success: true, message: 'Formation désactivée avec succès' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+};
+
+// =============================================
+// ❌ DELETE - Supprimer définitivement
+// =============================================
+const hardDeleteFormation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [existing] = await db.query('SELECT id FROM formation WHERE id = ?', [id]);
+        if (existing.length === 0) return res.status(404).json({ success: false, message: 'Formation non trouvée' });
+        await db.query('DELETE FROM formation WHERE id = ?', [id]);
+        res.json({ success: true, message: 'Formation supprimée définitivement' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+};
+// nafahat_api/controllers/formationController.js
+
+// =============================================
+// ✅ GET - Toutes les formations (avec jointure cible)
+// =============================================
+const getAllFormations = async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT f.*, 
+                   tf.type_formation,
+                   d.type_duree,
+                   c.categorie_fr, c.categorie_ar,
+                   form.nom_prenom_fr as formateur_nom_fr,
+                   form.nom_prenom_ar as formateur_nom_ar,
+                   cible.nom_cible as cible_nom,
+                   cible.ch1 as cible_ch1,
+                   cible.ch2 as cible_ch2,
+                   cible.ch3 as cible_ch3,
+                   CASE 
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
+            FROM formation f
+            LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
+            LEFT JOIN duree d ON f.id_duree = d.id
+            LEFT JOIN categorie c ON f.id_categorie = c.id
+            LEFT JOIN formateur form ON f.id_formateur = form.id
+            LEFT JOIN cible cible ON f.id_cible = cible.id
+            ORDER BY f.created_at DESC
+        `);
+        res.json({ success: true, data: rows });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+};
+
+// =============================================
+// ✅ GET - Formation par ID
+// =============================================
+const getFormationById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await db.query(`
+            SELECT f.*, 
+                   tf.type_formation,
+                   d.type_duree,
+                   c.categorie_fr, c.categorie_ar,
+                   form.nom_prenom_fr as formateur_nom_fr,
+                   form.nom_prenom_ar as formateur_nom_ar,
+                   cible.nom_cible as cible_nom,
+                   cible.ch1 as cible_ch1,
+                   cible.ch2 as cible_ch2,
+                   cible.ch3 as cible_ch3,
+                   CASE 
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
+            FROM formation f
+            LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
+            LEFT JOIN duree d ON f.id_duree = d.id
+            LEFT JOIN categorie c ON f.id_categorie = c.id
+            LEFT JOIN formateur form ON f.id_formateur = form.id
+            LEFT JOIN cible cible ON f.id_cible = cible.id
+            WHERE f.id = ?
+        `, [id]);
+        if (rows.length === 0) return res.status(404).json({ success: false, message: 'Formation non trouvée' });
+        res.json({ success: true, data: rows[0] });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+};
+
+// =============================================
+// ✅ POST - Créer une formation
+// =============================================
+const createFormation = async (req, res) => {
+    try {
+        const {
+            titre_fr,
+            titre_ar,
+            id_type_formation,
+            id_cible, // ✅ ID de la cible
+            cible_fr,
+            cible_ar,
+            id_duree,
+            date_debut,
+            date_fin,
+            prix_dt,
+            prix_eur,
+            prix_usd,
+            discount,
+            valeur_disc,
+            descri_fr,
+            descri_ar,
+            id_categorie,
+            id_formateur,
+            photo,
+            nbr_heur,
+            nbr_seance,
+            nbr_jour,
+            repetitive,
+            jour_semaine
+        } = req.body;
+
+        if (!titre_fr || !titre_ar || !id_type_formation || !id_cible || !id_duree || !prix_dt || !descri_fr || !descri_ar) {
+            return res.status(400).json({
+                success: false,
+                message: 'Champs obligatoires manquants'
+            });
+        }
+
+        let periode = null;
+        if (date_debut && date_fin) {
+            periode = `${date_debut} - ${date_fin}`;
+        }
+
+        // ✅ Requête INSERT avec id_cible
+        const [result] = await db.query(
+            `INSERT INTO formation (
+                titre_fr, titre_ar, id_type_formation, 
+                id_cible, cible_fr, cible_ar,
+                id_duree, periode, date_debut, date_fin,
+                prix_dt, prix_eur, prix_usd,
+                discount, valeur_disc, 
+                descri_fr, descri_ar, 
+                id_categorie, id_formateur, photo, actif,
+                nbr_heur, nbr_seance, nbr_jour, repetitive, jour_semaine
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'oui', ?, ?, ?, ?, ?)`,
+            [
+                titre_fr,
+                titre_ar,
+                id_type_formation,
+                id_cible,
+                cible_fr || null,
+                cible_ar || null,
+                id_duree,
+                periode,
+                date_debut || null,
+                date_fin || null,
+                prix_dt || 0,
+                prix_eur || 0,
+                prix_usd || 0,
+                discount || 'non',
+                valeur_disc || null,
+                descri_fr,
+                descri_ar,
+                id_categorie || null,
+                id_formateur || null,
+                photo || null,
+                nbr_heur ?? 0,
+                nbr_seance ?? 0,
+                nbr_jour ?? 0,
+                repetitive ?? 'non',
+                jour_semaine ?? null
+            ]
+        );
+
+        res.json({ 
+            success: true, 
+            message: 'Formation créée avec succès', 
+            id: result.insertId 
+        });
+    } catch (error) {
+        console.error('❌ Erreur createFormation:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erreur serveur', 
+            error: error.sqlMessage || error.message 
+        });
+    }
+};
+
+// =============================================
+// ✅ PUT - Mettre à jour une formation
+// =============================================
+const updateFormation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            titre_fr,
+            titre_ar,
+            id_type_formation,
+            id_cible,
+            cible_fr,
+            cible_ar,
+            id_duree,
+            date_debut,
+            date_fin,
+            prix_dt,
+            prix_eur,
+            prix_usd,
+            discount,
+            valeur_disc,
+            descri_fr,
+            descri_ar,
+            id_categorie,
+            id_formateur,
+            photo,
+            actif,
+            nbr_heur,
+            nbr_seance,
+            nbr_jour,
+            repetitive,
+            jour_semaine
+        } = req.body;
+
+        const [existing] = await db.query('SELECT id FROM formation WHERE id = ?', [id]);
+        if (existing.length === 0) {
+            return res.status(404).json({ success: false, message: 'Formation non trouvée' });
+        }
+
+        let periode = null;
+        if (date_debut && date_fin) {
+            periode = `${date_debut} - ${date_fin}`;
+        }
+
+        const [result] = await db.query(
+            `UPDATE formation SET 
+                titre_fr = ?, titre_ar = ?, id_type_formation = ?, 
+                id_cible = ?, cible_fr = ?, cible_ar = ?,
+                id_duree = ?, periode = ?,
+                date_debut = ?, date_fin = ?, 
+                prix_dt = ?, prix_eur = ?, prix_usd = ?,
+                discount = ?, valeur_disc = ?, 
+                descri_fr = ?, descri_ar = ?, 
+                id_categorie = ?, id_formateur = ?, photo = ?, actif = ?,
+                nbr_heur = ?, nbr_seance = ?, nbr_jour = ?, repetitive = ?, jour_semaine = ?
+            WHERE id = ?`,
+            [
+                titre_fr,
+                titre_ar,
+                id_type_formation,
+                id_cible,
+                cible_fr || null,
+                cible_ar || null,
+                id_duree,
+                periode,
+                date_debut || null,
+                date_fin || null,
+                prix_dt || 0,
+                prix_eur || 0,
+                prix_usd || 0,
+                discount || 'non',
+                valeur_disc || null,
+                descri_fr,
+                descri_ar,
+                id_categorie || null,
+                id_formateur || null,
+                photo || null,
+                actif || 'oui',
+                nbr_heur ?? 0,
+                nbr_seance ?? 0,
+                nbr_jour ?? 0,
+                repetitive ?? 'non',
+                jour_semaine ?? null,
+                id
+            ]
+        );
+
+        res.json({ success: true, message: 'Formation mise à jour avec succès', id });
+    } catch (error) {
+        console.error('❌ Erreur updateFormation:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erreur serveur', 
+            error: error.sqlMessage || error.message 
+        });
+    }
+};
+
+// =============================================
+// ✅ GET - Formations actives
+// =============================================
+const getActiveFormations = async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT f.*, 
+                   tf.type_formation,
+                   d.type_duree,
+                   c.categorie_fr, c.categorie_ar,
+                   form.nom_prenom_fr as formateur_nom_fr,
+                   form.nom_prenom_ar as formateur_nom_ar,
+                   cible.nom_cible as cible_nom,
+                   cible.ch1 as cible_ch1,
+                   cible.ch2 as cible_ch2,
+                   cible.ch3 as cible_ch3,
+                   CASE 
+                       WHEN f.discount = 'oui' AND f.valeur_disc IS NOT NULL THEN f.prix_dt - f.valeur_disc
+                       ELSE f.prix_dt
+                   END as prix_final_dt
+            FROM formation f
+            LEFT JOIN type_formation tf ON f.id_type_formation = tf.id
+            LEFT JOIN duree d ON f.id_duree = d.id
+            LEFT JOIN categorie c ON f.id_categorie = c.id
+            LEFT JOIN formateur form ON f.id_formateur = form.id
+            LEFT JOIN cible cible ON f.id_cible = cible.id
+            WHERE f.actif = 'oui'
+            ORDER BY f.created_at DESC
+        `);
+        res.json({ success: true, data: rows });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+};
+
+// ... Les autres fonctions restent inchangées ...
+
+// =============================================
+// 📤 EXPORTS
+// =============================================
 module.exports = {
     getAllFormations,
     getFormationById,

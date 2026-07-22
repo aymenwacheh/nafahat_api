@@ -58,12 +58,13 @@ let formationRoutes;
 let formateurRoutes;
 let categorieRoutes;
 let uploadRoutes;
-let uploadImageRoutes; // 👈 NOUVEAU: route pour l'upload d'images
+let uploadImageRoutes;
 let videosRoutes;
 let dureeRoutes;
 let typeFormationRoutes;
 let adherentRoutes;
 let chatbotRoutes;
+let cibleRoutes; // ✅ NOUVEAU
 
 try {
     formationRoutes = require('./routes/formations');
@@ -93,7 +94,6 @@ try {
     console.error('   ❌ Erreur chargement upload:', error.message);
 }
 
-// 👈 NOUVEAU: Import de la route uploadImage
 try {
     uploadImageRoutes = require('./routes/uploadImage');
     console.log('   ✅ Route uploadImage chargée');
@@ -136,6 +136,14 @@ try {
     console.error('   ❌ Erreur chargement chatbot:', error.message);
 }
 
+// ✅ NOUVEAU: Import des routes cibles
+try {
+    cibleRoutes = require('./routes/cibles');
+    console.log('   ✅ Route cibles chargée');
+} catch (error) {
+    console.error('   ❌ Erreur chargement cibles:', error.message);
+}
+
 // =============================================
 // UTILISATION DES ROUTES
 // =============================================
@@ -153,13 +161,14 @@ app.get('/api/test', (req, res) => {
             '/api/formateurs',
             '/api/categories',
             '/api/upload',
-            '/api/upload/image', // 👈 NOUVEAU
+            '/api/upload/image',
             '/api/videos',
             '/api/durees',
             '/api/duree',
             '/api/types-formation',
             '/api/adherents',
-            '/api/chatbot'
+            '/api/chatbot',
+            '/api/cibles' // ✅ NOUVEAU
         ]
     });
 });
@@ -217,7 +226,7 @@ if (uploadRoutes) {
     console.log('   ⚠️ /api/upload non enregistré (route manquante)');
 }
 
-// 👈 NOUVEAU: Upload Image routes
+// Upload Image routes
 if (uploadImageRoutes) {
     app.use('/api/upload', (req, res, next) => {
         console.log(`📥 [uploadImage] ${req.method} ${req.url}`);
@@ -303,6 +312,20 @@ if (chatbotRoutes) {
     console.log('   ⚠️ /api/chatbot non enregistré (route manquante)');
 }
 
+// ✅ NOUVEAU: Cibles routes
+if (cibleRoutes) {
+    app.use('/api/cibles', (req, res, next) => {
+        console.log(`📥 [cibles] ${req.method} ${req.url}`);
+        if (req.method === 'POST' || req.method === 'PUT') {
+            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
+        }
+        next();
+    }, cibleRoutes);
+    console.log('   ✅ /api/cibles enregistré');
+} else {
+    console.log('   ⚠️ /api/cibles non enregistré (route manquante)');
+}
+
 // =============================================
 // ROUTE D'ACCUEIL
 // =============================================
@@ -323,7 +346,8 @@ app.get('/', (req, res) => {
             { method: 'GET,POST,PUT,DELETE', path: '/api/duree', description: 'Gestion des durées (SANS "s") - REDIRECTION' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/types-formation', description: 'Gestion des types de formation' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/adherents', description: 'Gestion des adhérents' },
-            { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' }
+            { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' },
+            { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' } // ✅ NOUVEAU
         ]
     });
 });
@@ -342,13 +366,14 @@ app.use((req, res) => {
             '/api/formateurs',
             '/api/categories',
             '/api/upload',
-            '/api/upload/image', // 👈 NOUVEAU
+            '/api/upload/image',
             '/api/videos',
             '/api/durees',
             '/api/duree',
             '/api/types-formation',
             '/api/adherents',
-            '/api/chatbot'
+            '/api/chatbot',
+            '/api/cibles' // ✅ NOUVEAU
         ]
     });
 });
@@ -375,13 +400,14 @@ console.log('   ✅ /api/formations');
 console.log('   ✅ /api/formateurs');
 console.log('   ✅ /api/categories');
 console.log('   ✅ /api/upload');
-console.log('   ✅ /api/upload/image (NOUVEAU)');
+console.log('   ✅ /api/upload/image');
 console.log('   ✅ /api/videos');
 console.log('   ✅ /api/durees (AVEC "s")');
 console.log('   ✅ /api/duree (SANS "s") - REDIRECTION');
 console.log('   ✅ /api/types-formation');
 console.log('   ✅ /api/adherents');
 console.log('   ✅ /api/chatbot');
+console.log('   ✅ /api/cibles (NOUVEAU)'); // ✅ NOUVEAU
 console.log('   ✅ /');
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
@@ -392,10 +418,12 @@ app.listen(PORT, () => {
     console.log(`📋 Durées (avec s): http://localhost:${PORT}/api/durees`);
     console.log(`📋 Durées (sans s): http://localhost:${PORT}/api/duree`);
     console.log(`📋 Chatbot: http://localhost:${PORT}/api/chatbot/categories`);
+    console.log(`📋 Cibles: http://localhost:${PORT}/api/cibles`); // ✅ NOUVEAU
     console.log('\n💡 IMPORTANT:');
     console.log('   - Les images uploadées sont stockées dans uploads/formations/');
     console.log('   - Le frontend appelle /api/upload/image pour uploader les images');
     console.log('   - Le frontend appelle /api/duree (sans "s")');
     console.log('   - Le backend utilise /api/durees (avec "s")');
     console.log('   - La redirection est automatique !');
+    console.log('   - Les cibles sont accessibles via /api/cibles'); // ✅ NOUVEAU
 });
