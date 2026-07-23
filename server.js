@@ -44,7 +44,48 @@ if (!fs.existsSync(formationsDir)) {
 
 // Servir les fichiers statiques
 app.use('/uploads', express.static(uploadsDir));
-console.log('   ✅ Uploads statiques activés');
+console.log('   ✅ Uploads statiques activés sur /uploads');
+
+// =============================================
+// ✅ CONFIGURATION UNIQUE POUR LOCAL ET PRODUCTION
+// =============================================
+// Détection automatique de l'environnement
+const isProduction = process.env.NODE_ENV === 'production' || 
+                     process.env.HOSTNAME === 'www.nafahat-academy.com' ||
+                     process.env.BASE_URL === 'http://www.nafahat-academy.com';
+
+console.log(`   🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
+
+// 🔥 Chemin /nafahat_api/uploads - FONCTIONNE EN LOCAL ET EN PRODUCTION
+app.use('/nafahat_api/uploads', express.static(uploadsDir));
+console.log('   ✅ /nafahat_api/uploads activé');
+
+// 🔥 Chemin /nafahat_api/uploads/formations
+app.use('/nafahat_api/uploads/formations', express.static(formationsDir));
+console.log('   ✅ /nafahat_api/uploads/formations activé');
+
+// 🔥 Route directe pour les images (fallback pour les deux environnements)
+app.get('/nafahat_api/uploads/formations/:filename', (req, res) => {
+    const filePath = path.join(formationsDir, req.params.filename);
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        // En production, essayer de récupérer l'image depuis le chemin absolu
+        if (isProduction) {
+            // Essayer avec le chemin complet depuis la racine
+            const altPath = path.join('/var/www/nafahat_api/uploads/formations', req.params.filename);
+            if (fs.existsSync(altPath)) {
+                return res.sendFile(altPath);
+            }
+        }
+        res.status(404).json({ success: false, message: 'Image non trouvée' });
+    }
+});
+console.log('   ✅ Route directe pour les images activée');
+
+// =============================================
+// FIN DE LA CONFIGURATION STATIQUE
+// =============================================
 
 console.log('✅ Middlewares configurés avec succès');
 
@@ -64,7 +105,7 @@ let dureeRoutes;
 let typeFormationRoutes;
 let adherentRoutes;
 let chatbotRoutes;
-let cibleRoutes; // ✅ NOUVEAU
+let cibleRoutes;
 
 try {
     formationRoutes = require('./routes/formations');
@@ -136,7 +177,6 @@ try {
     console.error('   ❌ Erreur chargement chatbot:', error.message);
 }
 
-// ✅ NOUVEAU: Import des routes cibles
 try {
     cibleRoutes = require('./routes/cibles');
     console.log('   ✅ Route cibles chargée');
@@ -156,6 +196,7 @@ app.get('/api/test', (req, res) => {
         success: true, 
         message: 'API fonctionne !',
         timestamp: new Date().toISOString(),
+        environment: isProduction ? 'PRODUCTION' : 'DEVELOPPEMENT',
         routes: [
             '/api/formations',
             '/api/formateurs',
@@ -168,7 +209,7 @@ app.get('/api/test', (req, res) => {
             '/api/types-formation',
             '/api/adherents',
             '/api/chatbot',
-            '/api/cibles' // ✅ NOUVEAU
+            '/api/cibles'
         ]
     });
 });
@@ -312,7 +353,7 @@ if (chatbotRoutes) {
     console.log('   ⚠️ /api/chatbot non enregistré (route manquante)');
 }
 
-// ✅ NOUVEAU: Cibles routes
+// Cibles routes
 if (cibleRoutes) {
     app.use('/api/cibles', (req, res, next) => {
         console.log(`📥 [cibles] ${req.method} ${req.url}`);
@@ -334,6 +375,7 @@ app.get('/', (req, res) => {
     res.json({ 
         message: 'Bienvenue sur l\'API Nafahat',
         version: '1.0.0',
+        environment: isProduction ? 'PRODUCTION' : 'DEVELOPPEMENT',
         endpoints: [
             { method: 'GET', path: '/api/test', description: 'Test de l\'API' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/formations', description: 'Gestion des formations' },
@@ -347,7 +389,7 @@ app.get('/', (req, res) => {
             { method: 'GET,POST,PUT,DELETE', path: '/api/types-formation', description: 'Gestion des types de formation' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/adherents', description: 'Gestion des adhérents' },
             { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' } // ✅ NOUVEAU
+            { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' }
         ]
     });
 });
@@ -373,7 +415,7 @@ app.use((req, res) => {
             '/api/types-formation',
             '/api/adherents',
             '/api/chatbot',
-            '/api/cibles' // ✅ NOUVEAU
+            '/api/cibles'
         ]
     });
 });
@@ -407,8 +449,12 @@ console.log('   ✅ /api/duree (SANS "s") - REDIRECTION');
 console.log('   ✅ /api/types-formation');
 console.log('   ✅ /api/adherents');
 console.log('   ✅ /api/chatbot');
-console.log('   ✅ /api/cibles (NOUVEAU)'); // ✅ NOUVEAU
+console.log('   ✅ /api/cibles');
 console.log('   ✅ /');
+
+console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
+console.log(`📁 Dossier uploads: ${uploadsDir}`);
+console.log(`📁 Dossier formations: ${formationsDir}`);
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
 app.listen(PORT, () => {
@@ -418,12 +464,14 @@ app.listen(PORT, () => {
     console.log(`📋 Durées (avec s): http://localhost:${PORT}/api/durees`);
     console.log(`📋 Durées (sans s): http://localhost:${PORT}/api/duree`);
     console.log(`📋 Chatbot: http://localhost:${PORT}/api/chatbot/categories`);
-    console.log(`📋 Cibles: http://localhost:${PORT}/api/cibles`); // ✅ NOUVEAU
+    console.log(`📋 Cibles: http://localhost:${PORT}/api/cibles`);
     console.log('\n💡 IMPORTANT:');
     console.log('   - Les images uploadées sont stockées dans uploads/formations/');
     console.log('   - Le frontend appelle /api/upload/image pour uploader les images');
     console.log('   - Le frontend appelle /api/duree (sans "s")');
     console.log('   - Le backend utilise /api/durees (avec "s")');
     console.log('   - La redirection est automatique !');
-    console.log('   - Les cibles sont accessibles via /api/cibles'); // ✅ NOUVEAU
+    console.log('   - Les cibles sont accessibles via /api/cibles');
+    console.log(`   - Les images sont servies sur /nafahat_api/uploads/formations/`);
+    console.log(`   - Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
 });
