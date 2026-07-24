@@ -13,14 +13,14 @@ const fs = require('fs');
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, '../uploads/formations');
-    
+
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
-    
+
     cb(null, uploadDir);
   },
-  
+
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const extension = path.extname(file.originalname) || '.jpg';
@@ -53,22 +53,22 @@ const fileFilter = (req, file, cb) => {
     'image/heic',
     'image/heif'
   ];
-  
+
   // ✅ Extensions autorisées
   const allowedExtensions = [
-    '.jpeg', '.jpg', '.png', '.gif', '.webp', 
-    '.svg', '.bmp', '.tiff', '.tif', '.ico', 
+    '.jpeg', '.jpg', '.png', '.gif', '.webp',
+    '.svg', '.bmp', '.tiff', '.tif', '.ico',
     '.heic', '.heif'
   ];
-  
+
   const extension = path.extname(file.originalname).toLowerCase();
   const isExtensionValid = allowedExtensions.includes(extension);
-  
+
   // ✅ Si le mimetype est dans la liste OU l'extension est valide
   // ✅ OU si le mimetype commence par 'image/'
-  const isMimeTypeValid = allowedMimeTypes.includes(file.mimetype) || 
+  const isMimeTypeValid = allowedMimeTypes.includes(file.mimetype) ||
                           file.mimetype.startsWith('image/');
-  
+
   const isValid = isMimeTypeValid || isExtensionValid;
 
   console.log(`📸 [Upload] Validation: ${isValid ? '✅ ACCEPTÉ' : '❌ REJETÉ'}`);
@@ -98,6 +98,13 @@ const upload = multer({
 /**
  * POST /api/upload/image
  * Upload une image
+ *
+ * ✅ CORRECTION: on ne renvoie plus une URL absolue construite avec
+ * BASE_URL (qui valait localhost:3000 en dev, une IP en prod, etc.
+ * et se retrouvait figée en base de données). On renvoie un CHEMIN
+ * RELATIF, identique quel que soit l'environnement. C'est au client
+ * (Flutter) de préfixer avec son propre baseUrl au moment d'afficher
+ * l'image, jamais au serveur de décider de cette URL à l'upload.
  */
 router.post('/image', upload.single('image'), (req, res) => {
   try {
@@ -109,15 +116,17 @@ router.post('/image', upload.single('image'), (req, res) => {
     }
 
     const filename = req.file.filename;
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-    const imageUrl = `${baseUrl}/uploads/formations/${filename}`;
+    const imageUrl = `/uploads/formations/${filename}`;
 
     console.log(`✅ [Upload] Image uploadée: ${imageUrl}`);
 
     res.json({
       success: true,
       message: '✅ Image uploadée avec succès',
+      // On garde les deux clés pour ne rien casser côté frontend,
+      // qu'il lise image_url (nouveau) ou imageUrl (comme upload.js)
       image_url: imageUrl,
+      imageUrl: imageUrl,
       filename: filename,
       file_info: {
         original_name: req.file.originalname,
@@ -128,7 +137,7 @@ router.post('/image', upload.single('image'), (req, res) => {
 
   } catch (error) {
     console.error('❌ [Upload] Erreur:', error);
-    
+
     res.status(500).json({
       success: false,
       message: '❌ Erreur lors de l\'upload de l\'image',
@@ -153,7 +162,7 @@ router.use((err, req, res, next) => {
       error: err.message
     });
   }
-  
+
   if (err) {
     return res.status(400).json({
       success: false,
@@ -161,7 +170,7 @@ router.use((err, req, res, next) => {
       error: err.message
     });
   }
-  
+
   next();
 });
 
@@ -178,8 +187,7 @@ router.post('/image-auto', upload.single('image'), (req, res) => {
     }
 
     const filename = req.file.filename;
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-    const imageUrl = `${baseUrl}/uploads/formations/${filename}`;
+    const imageUrl = `/uploads/formations/${filename}`;
 
     console.log(`✅ [Upload Auto] Image uploadée: ${imageUrl}`);
 
@@ -187,6 +195,7 @@ router.post('/image-auto', upload.single('image'), (req, res) => {
       success: true,
       message: '✅ Image uploadée avec succès',
       image_url: imageUrl,
+      imageUrl: imageUrl,
       filename: filename,
       file_info: {
         original_name: req.file.originalname,
@@ -198,7 +207,7 @@ router.post('/image-auto', upload.single('image'), (req, res) => {
 
   } catch (error) {
     console.error('❌ [Upload Auto] Erreur:', error);
-    
+
     res.status(500).json({
       success: false,
       message: '❌ Erreur lors de l\'upload',
@@ -214,26 +223,26 @@ router.delete('/image/:filename', (req, res) => {
   try {
     const filename = req.params.filename;
     const filePath = path.join(__dirname, '../uploads/formations', filename);
-    
+
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
         message: '❌ Fichier non trouvé'
       });
     }
-    
+
     fs.unlinkSync(filePath);
-    
+
     console.log(`✅ [Upload] Image supprimée: ${filename}`);
-    
+
     res.json({
       success: true,
       message: '✅ Image supprimée avec succès'
     });
-    
+
   } catch (error) {
     console.error('❌ [Upload] Erreur suppression:', error);
-    
+
     res.status(500).json({
       success: false,
       message: '❌ Erreur lors de la suppression',
