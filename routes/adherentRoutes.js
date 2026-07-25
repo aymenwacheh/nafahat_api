@@ -16,4 +16,8 @@ router.get('/:id/credentials', adherentController.getAdherentCredentials);
 router.put('/:id', adherentController.updateAdherent);
 router.delete('/:id', adherentController.deleteAdherent);
 
+// -----les routes de vérification dans le backend lors de la creation --- //
+router.get('/check-whatsapp', adherentController.checkWhatsapp);
+router.get('/check-email', adherentController.checkEmail);
+
 module.exports = router;
