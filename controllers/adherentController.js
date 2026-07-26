@@ -25,7 +25,6 @@ https://nafahat.com/connexion
 async function checkExistingUser(whatsapp, email) {
   const errors = [];
   
-  // Vérifier le numéro WhatsApp
   if (whatsapp) {
     const [rows] = await db.query(
       'SELECT id, whatsapp FROM adherent WHERE whatsapp = ?',
@@ -39,8 +38,7 @@ async function checkExistingUser(whatsapp, email) {
     }
   }
   
-  // Vérifier l'email
-  if (email) {
+  if (email && email.trim() !== '') {
     const [rows] = await db.query(
       'SELECT id, email FROM adherent WHERE email = ?',
       [email]
@@ -57,16 +55,13 @@ async function checkExistingUser(whatsapp, email) {
 }
 
 // ============================================================
-// INSCRIPTION (POST) - AVEC VÉRIFICATIONS D'UNICITÉ
+// 1. INSCRIPTION ADHÉRENT (POST)
 // ============================================================
 exports.inscrireAdherent = async (req, res) => {
   const { adherent, enfants } = req.body;
 
   console.log('📝 [inscrireAdherent] Données reçues:', JSON.stringify(req.body, null, 2));
 
-  // ============================================================
-  // 1. VALIDATION DES DONNÉES OBLIGATOIRES
-  // ============================================================
   if (!adherent || !adherent.whatsapp || !adherent.nomPrenom) {
     return res.status(400).json({ 
       success: false,
@@ -76,28 +71,23 @@ exports.inscrireAdherent = async (req, res) => {
   }
 
   try {
-    // ============================================================
-    // 2. VÉRIFICATION DES DOUBLONS
-    // ============================================================
+    // Vérification des doublons
     const errors = await checkExistingUser(adherent.whatsapp, adherent.email);
     
     if (errors.length > 0) {
-      // Construire un message d'erreur personnalisé
-      let errorMessage = '';
       const fieldErrors = {};
+      let errorMessage = '';
       
       errors.forEach(err => {
+        fieldErrors[err.field] = err.message;
         if (err.field === 'whatsapp') {
           errorMessage = '❌ Ce numéro WhatsApp est déjà utilisé. Veuillez vous connecter ou utiliser un autre numéro.';
-          fieldErrors.whatsapp = err.message;
         }
         if (err.field === 'email') {
           errorMessage = '❌ Cet email est déjà utilisé. Veuillez vous connecter ou utiliser un autre email.';
-          fieldErrors.email = err.message;
         }
       });
       
-      // Si les deux sont en double
       if (errors.length > 1) {
         errorMessage = '❌ Le numéro WhatsApp et l\'email sont déjà enregistrés. Veuillez vous connecter.';
       }
@@ -110,14 +100,12 @@ exports.inscrireAdherent = async (req, res) => {
       });
     }
 
-    // ============================================================
-    // 3. INSERTION DE L'ADHÉRENT
-    // ============================================================
     const connection = await db.pool.getConnection();
     
     try {
       await connection.beginTransaction();
 
+      // Insertion de l'adhérent
       console.log('📝 [inscrireAdherent] Insertion adhérent...');
       const [result] = await connection.query(
         `INSERT INTO adherent 
@@ -143,14 +131,10 @@ exports.inscrireAdherent = async (req, res) => {
       const adherentId = result.insertId;
       console.log(`📝 [inscrireAdherent] Adhérent créé avec ID: ${adherentId}`);
 
-      // ============================================================
-      // 4. GÉNÉRATION DU MOT DE PASSE
-      // ============================================================
+      // Génération du mot de passe
       const motDePasse = `nafa-${adherentId}`;
 
-      // ============================================================
-      // 5. INSERTION DANS LA TABLE acces_adherent
-      // ============================================================
+      // Insertion dans acces_adherent (sans rôle = NULL pour les adhérents)
       console.log('📝 [inscrireAdherent] Insertion accès...');
       await connection.query(
         `INSERT INTO acces_adherent 
@@ -164,9 +148,7 @@ exports.inscrireAdherent = async (req, res) => {
         ]
       );
 
-      // ============================================================
-      // 6. INSERTION DES ENFANTS (si présents)
-      // ============================================================
+      // Insertion des enfants
       if (enfants && enfants.length > 0) {
         console.log(`📝 [inscrireAdherent] Insertion de ${enfants.length} enfant(s)...`);
         for (const enfant of enfants) {
@@ -193,9 +175,7 @@ exports.inscrireAdherent = async (req, res) => {
       await connection.commit();
       console.log('✅ [inscrireAdherent] Transaction validée');
 
-      // ============================================================
-      // 7. CONSTRUCTION DU MESSAGE WHATSAPP
-      // ============================================================
+      // Construction du message WhatsApp
       const message = generateWhatsAppMessage(
         adherent.nomPrenom,
         adherent.whatsapp,
@@ -206,9 +186,6 @@ exports.inscrireAdherent = async (req, res) => {
       const encodedMessage = encodeURIComponent(message);
       const waUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
 
-      // ============================================================
-      // 8. RÉPONSE SUCCÈS
-      // ============================================================
       res.status(201).json({
         success: true,
         message: '🎉 Inscription réussie ! Bienvenue à l\'Académie Nafahat.',
@@ -227,13 +204,11 @@ exports.inscrireAdherent = async (req, res) => {
       throw error;
     } finally {
       connection.release();
-      console.log('📝 [inscrireAdherent] Connexion libérée');
     }
 
   } catch (error) {
     console.error('❌ [inscrireAdherent] Erreur:', error);
     
-    // Gestion spécifique des erreurs de duplication (si la vérification a échoué)
     if (error.code === 'ER_DUP_ENTRY') {
       let errorMessage = '❌ Ces informations sont déjà enregistrées.';
       if (error.sqlMessage && error.sqlMessage.includes('whatsapp')) {
@@ -257,7 +232,134 @@ exports.inscrireAdherent = async (req, res) => {
 };
 
 // ============================================================
-// LISTE DES ADHÉRENTS (GET)
+// 2. AUTHENTIFICATION - LOGIN (POST)
+// ============================================================
+exports.login = async (req, res) => {
+  const { whatsapp, motDePasse } = req.body;
+
+  console.log(`📝 [login] Tentative: ${whatsapp}`);
+
+  if (!whatsapp || !motDePasse) {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Identifiants manquants' 
+    });
+  }
+
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+        acc.id as acces_id,
+        acc.adherent_id,
+        acc.nom_prenom,
+        acc.whatsapp,
+        acc.mot_de_passe,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle,
+        r.description as role_description,
+        a.email,
+        a.pays,
+        a.ville,
+        a.date_naissance,
+        a.genre,
+        a.accord_publication
+       FROM acces_adherent acc
+       JOIN adherent a ON acc.adherent_id = a.id
+       LEFT JOIN roles r ON acc.role_id = r.id
+       WHERE acc.whatsapp = ? AND acc.mot_de_passe = ?`,
+      [whatsapp, motDePasse]
+    );
+
+    if (rows.length === 0) {
+      console.log(`❌ [login] Échec: ${whatsapp}`);
+      return res.status(401).json({ 
+        success: false,
+        error: 'Identifiants invalides' 
+      });
+    }
+
+    console.log(`✅ [login] Succès: ${whatsapp}`);
+    const { mot_de_passe, ...userData } = rows[0];
+
+    const responseData = {
+      ...userData,
+      role: userData.role_nom ? {
+        id: userData.role_id,
+        nom: userData.role_nom,
+        libelle: userData.role_libelle,
+        description: userData.role_description
+      } : null
+    };
+
+    res.status(200).json({
+      success: true,
+      data: responseData,
+      message: 'Authentification réussie',
+    });
+  } catch (error) {
+    console.error('❌ [login] Erreur:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Erreur serveur lors de l\'authentification' 
+    });
+  }
+};
+
+// ============================================================
+// 3. VÉRIFICATION WHATSAPP (GET)
+// ============================================================
+exports.checkWhatsapp = async (req, res) => {
+  const { whatsapp } = req.query;
+  
+  if (!whatsapp) {
+    return res.status(400).json({ exists: false, error: 'WhatsApp requis' });
+  }
+  
+  try {
+    const [rows] = await db.query(
+      'SELECT id FROM adherent WHERE whatsapp = ?',
+      [whatsapp]
+    );
+    
+    res.json({ 
+      exists: rows.length > 0,
+      message: rows.length > 0 ? 'Numéro déjà utilisé' : 'Numéro disponible'
+    });
+  } catch (error) {
+    console.error('❌ checkWhatsapp:', error);
+    res.status(500).json({ exists: false, error: 'Erreur serveur' });
+  }
+};
+
+// ============================================================
+// 4. VÉRIFICATION EMAIL (GET)
+// ============================================================
+exports.checkEmail = async (req, res) => {
+  const { email } = req.query;
+  
+  if (!email) {
+    return res.status(400).json({ exists: false, error: 'Email requis' });
+  }
+  
+  try {
+    const [rows] = await db.query(
+      'SELECT id FROM adherent WHERE email = ?',
+      [email]
+    );
+    
+    res.json({ 
+      exists: rows.length > 0,
+      message: rows.length > 0 ? 'Email déjà utilisé' : 'Email disponible'
+    });
+  } catch (error) {
+    console.error('❌ checkEmail:', error);
+    res.status(500).json({ exists: false, error: 'Erreur serveur' });
+  }
+};
+
+// ============================================================
+// 5. LISTE DES ADHÉRENTS (GET)
 // ============================================================
 exports.getAdherents = async (req, res) => {
   try {
@@ -278,9 +380,13 @@ exports.getAdherents = async (req, res) => {
         a.accord_publication, 
         a.created_at,
         acc.mot_de_passe,
-        acc.id as acces_id
+        acc.id as acces_id,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle
        FROM adherent a
        LEFT JOIN acces_adherent acc ON a.id = acc.adherent_id
+       LEFT JOIN roles r ON acc.role_id = r.id
        ORDER BY a.id DESC`
     );
 
@@ -298,7 +404,7 @@ exports.getAdherents = async (req, res) => {
 };
 
 // ============================================================
-// ADHÉRENT PAR ID (GET)
+// 6. ADHÉRENT PAR ID (GET)
 // ============================================================
 exports.getAdherentById = async (req, res) => {
   const { id } = req.params;
@@ -321,9 +427,13 @@ exports.getAdherentById = async (req, res) => {
         a.accord_publication, 
         a.created_at,
         acc.mot_de_passe,
-        acc.id as acces_id
+        acc.id as acces_id,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle
        FROM adherent a
        LEFT JOIN acces_adherent acc ON a.id = acc.adherent_id
+       LEFT JOIN roles r ON acc.role_id = r.id
        WHERE a.id = ?`,
       [id]
     );
@@ -349,7 +459,7 @@ exports.getAdherentById = async (req, res) => {
 };
 
 // ============================================================
-// RÉCUPÉRER LES IDENTIFIANTS D'UN ADHÉRENT (GET)
+// 7. RÉCUPÉRER LES IDENTIFIANTS D'UN ADHÉRENT (GET)
 // ============================================================
 exports.getAdherentCredentials = async (req, res) => {
   const { id } = req.params;
@@ -390,67 +500,7 @@ exports.getAdherentCredentials = async (req, res) => {
 };
 
 // ============================================================
-// AUTHENTIFICATION (POST) - LOGIN
-// ============================================================
-exports.login = async (req, res) => {
-  const { whatsapp, motDePasse } = req.body;
-
-  console.log(`📝 [login] Tentative: ${whatsapp}`);
-
-  if (!whatsapp || !motDePasse) {
-    return res.status(400).json({ 
-      success: false,
-      error: 'Identifiants manquants' 
-    });
-  }
-
-  try {
-    const [rows] = await db.query(
-      `SELECT 
-        acc.id as acces_id,
-        acc.adherent_id,
-        acc.nom_prenom,
-        acc.whatsapp,
-        acc.mot_de_passe,
-        a.email,
-        a.pays,
-        a.ville,
-        a.date_naissance,
-        a.genre,
-        a.accord_publication
-       FROM acces_adherent acc
-       JOIN adherent a ON acc.adherent_id = a.id
-       WHERE acc.whatsapp = ? AND acc.mot_de_passe = ?`,
-      [whatsapp, motDePasse]
-    );
-
-    if (rows.length === 0) {
-      console.log(`❌ [login] Échec: ${whatsapp}`);
-      return res.status(401).json({ 
-        success: false,
-        error: 'Identifiants invalides' 
-      });
-    }
-
-    console.log(`✅ [login] Succès: ${whatsapp}`);
-    const { mot_de_passe, ...userData } = rows[0];
-
-    res.status(200).json({
-      success: true,
-      data: userData,
-      message: 'Authentification réussie',
-    });
-  } catch (error) {
-    console.error('❌ [login] Erreur:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Erreur serveur lors de l\'authentification' 
-    });
-  }
-};
-
-// ============================================================
-// METTRE À JOUR UN ADHÉRENT (PUT)
+// 8. METTRE À JOUR UN ADHÉRENT (PUT)
 // ============================================================
 exports.updateAdherent = async (req, res) => {
   const { id } = req.params;
@@ -470,7 +520,6 @@ exports.updateAdherent = async (req, res) => {
   } = req.body;
 
   try {
-    // Vérifier si l'adhérent existe
     const [existing] = await db.query(
       'SELECT id FROM adherent WHERE id = ?',
       [id]
@@ -482,7 +531,6 @@ exports.updateAdherent = async (req, res) => {
       });
     }
 
-    // Vérifier les doublons (sauf pour l'adhérent actuel)
     const errors = [];
     
     if (whatsapp) {
@@ -498,7 +546,7 @@ exports.updateAdherent = async (req, res) => {
       }
     }
     
-    if (email) {
+    if (email && email.trim() !== '') {
       const [rows] = await db.query(
         'SELECT id FROM adherent WHERE email = ? AND id != ?',
         [email, id]
@@ -524,7 +572,7 @@ exports.updateAdherent = async (req, res) => {
     try {
       await connection.beginTransaction();
 
-      const [result] = await connection.query(
+      await connection.query(
         `UPDATE adherent SET
           whatsapp = ?,
           nom_prenom = ?,
@@ -537,7 +585,8 @@ exports.updateAdherent = async (req, res) => {
           source_autre_detail = ?,
           objectif = ?,
           suggestions = ?,
-          accord_publication = ?
+          accord_publication = ?,
+          updated_at = NOW()
          WHERE id = ?`,
         [
           whatsapp,
@@ -559,7 +608,8 @@ exports.updateAdherent = async (req, res) => {
       await connection.query(
         `UPDATE acces_adherent SET
           nom_prenom = ?,
-          whatsapp = ?
+          whatsapp = ?,
+          updated_at = NOW()
          WHERE adherent_id = ?`,
         [nomPrenom, whatsapp, id]
       );
@@ -587,28 +637,53 @@ exports.updateAdherent = async (req, res) => {
 };
 
 // ============================================================
-// SUPPRIMER UN ADHÉRENT (DELETE)
+// 9. SUPPRIMER UN ADHÉRENT (DELETE)
 // ============================================================
 exports.deleteAdherent = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [result] = await db.query(
-      'DELETE FROM adherent WHERE id = ?',
-      [id]
-    );
+    const connection = await db.pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Adhérent non trouvé' 
+      await connection.query(
+        'DELETE FROM acces_adherent WHERE adherent_id = ?',
+        [id]
+      );
+
+      await connection.query(
+        'DELETE FROM enfant WHERE adherent_id = ?',
+        [id]
+      );
+
+      const [result] = await connection.query(
+        'DELETE FROM adherent WHERE id = ?',
+        [id]
+      );
+
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        return res.status(404).json({ 
+          success: false,
+          error: 'Adhérent non trouvé' 
+        });
+      }
+
+      await connection.commit();
+
+      res.status(200).json({
+        success: true,
+        message: '✅ Adhérent supprimé avec succès',
       });
-    }
 
-    res.status(200).json({
-      success: true,
-      message: '✅ Adhérent supprimé avec succès',
-    });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     console.error('❌ [deleteAdherent] Erreur:', error);
     res.status(500).json({ 
@@ -617,61 +692,9 @@ exports.deleteAdherent = async (req, res) => {
     });
   }
 };
-// adherentController.js - Ajouter ces fonctions
 
 // ============================================================
-// VÉRIFICATION WHATSAPP (GET)
-// ============================================================
-exports.checkWhatsapp = async (req, res) => {
-  const { whatsapp } = req.query;
-  
-  if (!whatsapp) {
-    return res.status(400).json({ exists: false, error: 'WhatsApp requis' });
-  }
-  
-  try {
-    const [rows] = await db.query(
-      'SELECT id FROM adherent WHERE whatsapp = ?',
-      [whatsapp]
-    );
-    
-    res.json({ 
-      exists: rows.length > 0,
-      message: rows.length > 0 ? 'Numéro déjà utilisé' : 'Numéro disponible'
-    });
-  } catch (error) {
-    console.error('❌ checkWhatsapp:', error);
-    res.status(500).json({ exists: false, error: 'Erreur serveur' });
-  }
-};
-
-// ============================================================
-// VÉRIFICATION EMAIL (GET)
-// ============================================================
-exports.checkEmail = async (req, res) => {
-  const { email } = req.query;
-  
-  if (!email) {
-    return res.status(400).json({ exists: false, error: 'Email requis' });
-  }
-  
-  try {
-    const [rows] = await db.query(
-      'SELECT id FROM adherent WHERE email = ?',
-      [email]
-    );
-    
-    res.json({ 
-      exists: rows.length > 0,
-      message: rows.length > 0 ? 'Email déjà utilisé' : 'Email disponible'
-    });
-  } catch (error) {
-    console.error('❌ checkEmail:', error);
-    res.status(500).json({ exists: false, error: 'Erreur serveur' });
-  }
-};
-// ============================================================
-// RÉINITIALISER LE MOT DE PASSE (POST)
+// 10. RÉINITIALISER LE MOT DE PASSE (POST)
 // ============================================================
 exports.resetPassword = async (req, res) => {
   const { id } = req.params;
@@ -692,7 +715,7 @@ exports.resetPassword = async (req, res) => {
     const newMotDePasse = `nafa-${id}`;
 
     await db.query(
-      `UPDATE acces_adherent SET mot_de_passe = ? WHERE adherent_id = ?`,
+      `UPDATE acces_adherent SET mot_de_passe = ?, updated_at = NOW() WHERE adherent_id = ?`,
       [newMotDePasse, id]
     );
 
@@ -717,6 +740,525 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: 'Erreur serveur' 
+    });
+  }
+};
+
+// ============================================================
+// 11. GESTION DES RÔLES
+// ============================================================
+
+// 11a. LISTE DES RÔLES (GET)
+exports.getRoles = async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      'SELECT id, nom, libelle, description, created_at, updated_at FROM roles ORDER BY id'
+    );
+    
+    res.status(200).json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    console.error('❌ getRoles:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Erreur serveur' 
+    });
+  }
+};
+
+// 11b. CRÉER UN RÔLE (POST)
+exports.createRole = async (req, res) => {
+  const { nom, libelle, description } = req.body;
+
+  if (!nom || !libelle) {
+    return res.status(400).json({
+      success: false,
+      error: 'Le nom et le libellé du rôle sont requis'
+    });
+  }
+
+  try {
+    const [existing] = await db.query(
+      'SELECT id FROM roles WHERE nom = ?',
+      [nom]
+    );
+
+    if (existing.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: 'Ce rôle existe déjà'
+      });
+    }
+
+    const [result] = await db.query(
+      `INSERT INTO roles (nom, libelle, description, created_at, updated_at)
+       VALUES (?, ?, ?, NOW(), NOW())`,
+      [nom, libelle, description || null]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Rôle créé avec succès',
+      data: {
+        id: result.insertId,
+        nom,
+        libelle,
+        description
+      }
+    });
+  } catch (error) {
+    console.error('❌ createRole:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// 11c. MODIFIER UN RÔLE (PUT)
+exports.updateRole = async (req, res) => {
+  const { id } = req.params;
+  const { nom, libelle, description } = req.body;
+
+  try {
+    const [existing] = await db.query(
+      'SELECT id FROM roles WHERE id = ?',
+      [id]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Rôle non trouvé'
+      });
+    }
+
+    await db.query(
+      `UPDATE roles SET
+        nom = ?,
+        libelle = ?,
+        description = ?,
+        updated_at = NOW()
+       WHERE id = ?`,
+      [nom, libelle, description || null, id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Rôle mis à jour avec succès'
+    });
+  } catch (error) {
+    console.error('❌ updateRole:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// 11d. SUPPRIMER UN RÔLE (DELETE)
+exports.deleteRole = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [used] = await db.query(
+      'SELECT id FROM acces_adherent WHERE role_id = ?',
+      [id]
+    );
+
+    if (used.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: 'Ce rôle est utilisé par des utilisateurs et ne peut pas être supprimé'
+      });
+    }
+
+    const [result] = await db.query(
+      'DELETE FROM roles WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Rôle non trouvé'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Rôle supprimé avec succès'
+    });
+  } catch (error) {
+    console.error('❌ deleteRole:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// ============================================================
+// 12. GESTION DES UTILISATEURS (SUPER ADMIN)
+// ============================================================
+
+// 12a. CRÉER UN UTILISATEUR (POST)
+exports.creerUtilisateur = async (req, res) => {
+  const { adherent, enfants, roleId, motDePassePersonnalise } = req.body;
+
+  console.log('📝 [creerUtilisateur] Données reçues:', JSON.stringify(req.body, null, 2));
+
+  if (!adherent || !adherent.whatsapp || !adherent.nomPrenom || !roleId) {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Données manquantes. Veuillez remplir tous les champs obligatoires (*).'
+    });
+  }
+
+  try {
+    const errors = await checkExistingUser(adherent.whatsapp, adherent.email);
+    
+    if (errors.length > 0) {
+      const fieldErrors = {};
+      errors.forEach(err => {
+        fieldErrors[err.field] = err.message;
+      });
+      
+      return res.status(409).json({
+        success: false,
+        error: 'Certaines informations sont déjà utilisées.',
+        fieldErrors: fieldErrors
+      });
+    }
+
+    const connection = await db.pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+
+      const [result] = await connection.query(
+        `INSERT INTO adherent 
+          (whatsapp, nom_prenom, pays, ville, email, date_naissance, genre, 
+           source_connaissance, source_autre_detail, objectif, suggestions, accord_publication)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          adherent.whatsapp,
+          adherent.nomPrenom,
+          adherent.pays || '',
+          adherent.ville || '',
+          adherent.email || '',
+          adherent.dateNaissance || new Date().toISOString().split('T')[0],
+          adherent.genre || 'homme',
+          adherent.sourceConnaissance || 'instagram',
+          adherent.sourceAutreDetail || null,
+          adherent.objectif || null,
+          adherent.suggestions || null,
+          adherent.accordPublication ? 1 : 0,
+        ]
+      );
+
+      const adherentId = result.insertId;
+      console.log(`📝 [creerUtilisateur] Adhérent créé avec ID: ${adherentId}`);
+
+      let motDePasse = motDePassePersonnalise || `nafa-${adherentId}`;
+
+      await connection.query(
+        `INSERT INTO acces_adherent 
+          (adherent_id, role_id, nom_prenom, whatsapp, mot_de_passe)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          adherentId,
+          roleId,
+          adherent.nomPrenom,
+          adherent.whatsapp,
+          motDePasse,
+        ]
+      );
+
+      if (enfants && enfants.length > 0) {
+        for (const enfant of enfants) {
+          await connection.query(
+            `INSERT INTO enfant 
+              (adherent_id, nom_prenom, date_naissance, genre, niveau_tilawa, 
+               memorisation, memorisation_autre_detail, objectif, accord_inscription)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              adherentId,
+              enfant.nomPrenom || '',
+              enfant.dateNaissance || new Date().toISOString().split('T')[0],
+              enfant.genre || 'homme',
+              enfant.niveauTilawa || 'debutant',
+              enfant.memorisation || null,
+              enfant.memorisationAutreDetail || null,
+              enfant.objectif || null,
+              enfant.accordInscription ? 1 : null,
+            ]
+          );
+        }
+      }
+
+      await connection.commit();
+
+      const [roleRows] = await db.query(
+        'SELECT libelle FROM roles WHERE id = ?',
+        [roleId]
+      );
+      const roleLibelle = roleRows.length > 0 ? roleRows[0].libelle : '';
+
+      res.status(201).json({
+        success: true,
+        message: `✅ Utilisateur créé avec succès avec le rôle "${roleLibelle}"`,
+        userId: adherentId,
+        identifiant: adherent.whatsapp,
+        motDePasse: motDePasse,
+        credentials: {
+          identifiant: adherent.whatsapp,
+          motDePasse: motDePasse,
+        },
+      });
+
+    } catch (error) {
+      await connection.rollback();
+      console.error('❌ [creerUtilisateur] Erreur transaction:', error);
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+  } catch (error) {
+    console.error('❌ [creerUtilisateur] Erreur:', error);
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ 
+        success: false,
+        error: 'Ces informations sont déjà enregistrées.',
+        code: error.code
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Erreur serveur: ' + error.message 
+    });
+  }
+};
+
+// 12b. LISTE DES UTILISATEURS (GET)
+exports.getUsers = async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+        a.id,
+        a.whatsapp,
+        a.nom_prenom,
+        a.email,
+        a.pays,
+        a.ville,
+        a.created_at,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle,
+        acc.mot_de_passe
+       FROM adherent a
+       JOIN acces_adherent acc ON a.id = acc.adherent_id
+       LEFT JOIN roles r ON acc.role_id = r.id
+       ORDER BY a.id DESC`
+    );
+
+    res.status(200).json({
+      success: true,
+      data: rows,
+      count: rows.length
+    });
+  } catch (error) {
+    console.error('❌ getUsers:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// 12c. UTILISATEUR PAR ID (GET)
+exports.getUserById = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+        a.id,
+        a.whatsapp,
+        a.nom_prenom,
+        a.email,
+        a.pays,
+        a.ville,
+        a.date_naissance,
+        a.genre,
+        a.accord_publication,
+        a.created_at,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle,
+        acc.mot_de_passe
+       FROM adherent a
+       JOIN acces_adherent acc ON a.id = acc.adherent_id
+       LEFT JOIN roles r ON acc.role_id = r.id
+       WHERE a.id = ?`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Utilisateur non trouvé'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: rows[0]
+    });
+  } catch (error) {
+    console.error('❌ getUserById:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// 12d. MODIFIER UN UTILISATEUR (PUT)
+exports.updateUser = async (req, res) => {
+  const { id } = req.params;
+  const { 
+    whatsapp, 
+    nomPrenom, 
+    pays, 
+    ville, 
+    email, 
+    dateNaissance, 
+    genre, 
+    roleId,
+    motDePasse
+  } = req.body;
+
+  try {
+    const connection = await db.pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+
+      await connection.query(
+        `UPDATE adherent SET
+          whatsapp = ?,
+          nom_prenom = ?,
+          pays = ?,
+          ville = ?,
+          email = ?,
+          date_naissance = ?,
+          genre = ?,
+          updated_at = NOW()
+         WHERE id = ?`,
+        [whatsapp, nomPrenom, pays, ville, email, dateNaissance, genre, id]
+      );
+
+      let updateAccesQuery = `
+        UPDATE acces_adherent SET
+          nom_prenom = ?,
+          whatsapp = ?
+      `;
+      const params = [nomPrenom, whatsapp];
+
+      if (roleId) {
+        updateAccesQuery += `, role_id = ?`;
+        params.push(roleId);
+      }
+
+      if (motDePasse) {
+        updateAccesQuery += `, mot_de_passe = ?`;
+        params.push(motDePasse);
+      }
+
+      updateAccesQuery += `, updated_at = NOW() WHERE adherent_id = ?`;
+      params.push(id);
+
+      await connection.query(updateAccesQuery, params);
+
+      await connection.commit();
+
+      res.status(200).json({
+        success: true,
+        message: 'Utilisateur mis à jour avec succès'
+      });
+
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('❌ updateUser:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// 12e. SUPPRIMER UN UTILISATEUR (DELETE)
+exports.deleteUser = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const connection = await db.pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+
+      await connection.query(
+        'DELETE FROM acces_adherent WHERE adherent_id = ?',
+        [id]
+      );
+
+      await connection.query(
+        'DELETE FROM enfant WHERE adherent_id = ?',
+        [id]
+      );
+
+      const [result] = await connection.query(
+        'DELETE FROM adherent WHERE id = ?',
+        [id]
+      );
+
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        return res.status(404).json({
+          success: false,
+          error: 'Utilisateur non trouvé'
+        });
+      }
+
+      await connection.commit();
+
+      res.status(200).json({
+        success: true,
+        message: 'Utilisateur supprimé avec succès'
+      });
+
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('❌ deleteUser:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
     });
   }
 };
