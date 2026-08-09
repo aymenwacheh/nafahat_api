@@ -110,6 +110,42 @@ const testConnection = async () => {
             console.log('   ⚠️ Table "duree" non trouvée!');
         }
         
+        // ✅ Vérification de la table paiement
+        const [paiementTables] = await connection.query("SHOW TABLES LIKE 'paiement'");
+        if (paiementTables.length > 0) {
+            console.log('   ✅ Table "paiement" trouvée');
+            const [count] = await connection.query('SELECT COUNT(*) as count FROM paiement');
+            console.log(`   📋 ${count[0].count} enregistrements dans la table "paiement"`);
+            
+            // Vérifier la structure de la table paiement
+            const [columns] = await connection.query('SHOW COLUMNS FROM paiement');
+            console.log(`   📋 Colonnes de paiement (${columns.length}): ${columns.map(col => col.Field).join(', ')}`);
+        } else {
+            console.log('   ⚠️ Table "paiement" non trouvée!');
+            console.log('   💡 Exécutez le script SQL pour créer la table paiement');
+            console.log('   📋 Script: CREATE TABLE paiement ...');
+        }
+        
+        // ✅ Vérification de la table adherent
+        const [adherentTables] = await connection.query("SHOW TABLES LIKE 'adherent'");
+        if (adherentTables.length > 0) {
+            console.log('   ✅ Table "adherent" trouvée');
+            const [count] = await connection.query('SELECT COUNT(*) as count FROM adherent');
+            console.log(`   📋 ${count[0].count} enregistrements dans la table "adherent"`);
+        } else {
+            console.log('   ⚠️ Table "adherent" non trouvée!');
+        }
+        
+        // ✅ Vérification de la table formation
+        const [formationTables] = await connection.query("SHOW TABLES LIKE 'formation'");
+        if (formationTables.length > 0) {
+            console.log('   ✅ Table "formation" trouvée');
+            const [count] = await connection.query('SELECT COUNT(*) as count FROM formation');
+            console.log(`   📋 ${count[0].count} enregistrements dans la table "formation"`);
+        } else {
+            console.log('   ⚠️ Table "formation" non trouvée!');
+        }
+        
         const [allTables] = await connection.query('SHOW TABLES');
         console.log(`   📋 Tables disponibles (${allTables.length}): ${allTables.map(row => Object.values(row)[0]).join(', ')}`);
         
@@ -129,6 +165,109 @@ const testConnection = async () => {
 };
 
 // =============================================
+// FONCTIONS SPÉCIFIQUES POUR LES PAIEMENTS
+// =============================================
+
+/**
+ * Vérifie si la table paiement existe
+ */
+const checkPaiementTableExists = async () => {
+    try {
+        const [rows] = await query("SHOW TABLES LIKE 'paiement'");
+        return rows.length > 0;
+    } catch (error) {
+        console.error('❌ Erreur lors de la vérification de la table paiement:', error);
+        return false;
+    }
+};
+
+/**
+ * Crée la table paiement si elle n'existe pas
+ */
+const createPaiementTableIfNotExists = async () => {
+    try {
+        const exists = await checkPaiementTableExists();
+        if (exists) {
+            console.log('✅ Table paiement existe déjà');
+            return true;
+        }
+
+        console.log('📝 Création de la table paiement...');
+        
+        const sql = `
+            CREATE TABLE IF NOT EXISTS paiement (
+                id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                adherent_id INT NOT NULL,
+                adherent_nom_prenom VARCHAR(255) NOT NULL,
+                adherent_whatsapp VARCHAR(20) NOT NULL,
+                formation_id INT NOT NULL,
+                formation_titre_fr VARCHAR(255) NOT NULL,
+                formation_titre_ar VARCHAR(255) NOT NULL,
+                formation_prix DECIMAL(10,2) NOT NULL,
+                formation_devise VARCHAR(10) NOT NULL DEFAULT 'TND',
+                modalite_paiement ENUM('bancaire', 'postal', 'en_ligne', 'en_attente') NOT NULL DEFAULT 'en_attente',
+                statut_paiement ENUM('en_attente', 'valide', 'refuse', 'annule') NOT NULL DEFAULT 'en_attente',
+                montant_paye DECIMAL(10,2) NOT NULL,
+                date_paiement DATETIME DEFAULT NULL,
+                url_quittance VARCHAR(500) DEFAULT NULL,
+                numero_quittance VARCHAR(100) DEFAULT NULL,
+                reference_paiement VARCHAR(100) DEFAULT NULL,
+                id_paiement_externe VARCHAR(255) DEFAULT NULL,
+                commentaire TEXT DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                
+                INDEX idx_adherent_id (adherent_id),
+                INDEX idx_formation_id (formation_id),
+                INDEX idx_statut_paiement (statut_paiement),
+                INDEX idx_date_paiement (date_paiement),
+                INDEX idx_reference_paiement (reference_paiement),
+                
+                CONSTRAINT fk_paiement_adherent FOREIGN KEY (adherent_id) REFERENCES adherent(id) ON DELETE CASCADE,
+                CONSTRAINT fk_paiement_formation FOREIGN KEY (formation_id) REFERENCES formation(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `;
+
+        await query(sql);
+        console.log('✅ Table paiement créée avec succès');
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur lors de la création de la table paiement:', error);
+        return false;
+    }
+};
+
+/**
+ * Vérifier l'intégrité des clés étrangères pour paiement
+ */
+const checkPaiementForeignKeys = async () => {
+    try {
+        console.log('🔍 Vérification des clés étrangères pour paiement...');
+        
+        // Vérifier si les tables référencées existent
+        const [adherentTables] = await query("SHOW TABLES LIKE 'adherent'");
+        if (adherentTables.length === 0) {
+            console.log('⚠️ Table adherent manquante - clé étrangère ignorée');
+            // On peut créer la table adherent si elle n'existe pas
+            // Mais c'est déjà géré ailleurs
+            return false;
+        }
+
+        const [formationTables] = await query("SHOW TABLES LIKE 'formation'");
+        if (formationTables.length === 0) {
+            console.log('⚠️ Table formation manquante - clé étrangère ignorée');
+            return false;
+        }
+
+        console.log('✅ Toutes les tables référencées existent');
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur lors de la vérification des clés étrangères:', error);
+        return false;
+    }
+};
+
+// =============================================
 // EXPORT
 // =============================================
 
@@ -137,7 +276,18 @@ module.exports = {
     query,          // ✅ Pour les contrôleurs qui utilisent db.query()
     pool: promisePool,
     testConnection,
-    executeQuery: query // Alias pour compatibilité
+    executeQuery: query, // Alias pour compatibilité
+    // ✅ Nouvelles fonctions pour les paiements
+    checkPaiementTableExists,
+    createPaiementTableIfNotExists,
+    checkPaiementForeignKeys
 };
 
 console.log('📦 Module database exporté avec succès');
+console.log('   ✅ Fonctions disponibles:');
+console.log('      - query()');
+console.log('      - pool (promise)');
+console.log('      - testConnection()');
+console.log('      - checkPaiementTableExists()');
+console.log('      - createPaiementTableIfNotExists()');
+console.log('      - checkPaiementForeignKeys()');

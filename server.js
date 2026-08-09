@@ -26,10 +26,11 @@ app.use(express.urlencoded({ extended: true }));
 console.log('   ✅ URL-encoded parser activé');
 
 // =============================================
-// CRÉATION DU DOSSIER UPLOADS
+// CRÉATION DES DOSSIERS UPLOADS
 // =============================================
 const uploadsDir = path.join(__dirname, 'uploads');
 const formationsDir = path.join(uploadsDir, 'formations');
+const quittancesDir = path.join(uploadsDir, 'quittances');
 
 // Créer les dossiers s'ils n'existent pas
 if (!fs.existsSync(uploadsDir)) {
@@ -42,6 +43,11 @@ if (!fs.existsSync(formationsDir)) {
     console.log('   📁 Dossier "uploads/formations" créé');
 }
 
+if (!fs.existsSync(quittancesDir)) {
+    fs.mkdirSync(quittancesDir, { recursive: true });
+    console.log('   📁 Dossier "uploads/quittances" créé');
+}
+
 // Servir les fichiers statiques
 app.use('/uploads', express.static(uploadsDir));
 console.log('   ✅ Uploads statiques activés sur /uploads');
@@ -49,30 +55,29 @@ console.log('   ✅ Uploads statiques activés sur /uploads');
 // =============================================
 // ✅ CONFIGURATION UNIQUE POUR LOCAL ET PRODUCTION
 // =============================================
-// Détection automatique de l'environnement
 const isProduction = process.env.NODE_ENV === 'production' || 
                      process.env.HOSTNAME === 'www.nafahat-academy.com' ||
                      process.env.BASE_URL === 'http://www.nafahat-academy.com';
 
 console.log(`   🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
 
-// 🔥 Chemin /nafahat_api/uploads - FONCTIONNE EN LOCAL ET EN PRODUCTION
+// 🔥 Chemins statiques
 app.use('/nafahat_api/uploads', express.static(uploadsDir));
 console.log('   ✅ /nafahat_api/uploads activé');
 
-// 🔥 Chemin /nafahat_api/uploads/formations
 app.use('/nafahat_api/uploads/formations', express.static(formationsDir));
 console.log('   ✅ /nafahat_api/uploads/formations activé');
 
-// 🔥 Route directe pour les images (fallback pour les deux environnements)
+app.use('/nafahat_api/uploads/quittances', express.static(quittancesDir));
+console.log('   ✅ /nafahat_api/uploads/quittances activé');
+
+// 🔥 Route directe pour les images
 app.get('/nafahat_api/uploads/formations/:filename', (req, res) => {
     const filePath = path.join(formationsDir, req.params.filename);
     if (fs.existsSync(filePath)) {
         res.sendFile(filePath);
     } else {
-        // En production, essayer de récupérer l'image depuis le chemin absolu
         if (isProduction) {
-            // Essayer avec le chemin complet depuis la racine
             const altPath = path.join('/var/www/nafahat_api/uploads/formations', req.params.filename);
             if (fs.existsSync(altPath)) {
                 return res.sendFile(altPath);
@@ -83,9 +88,22 @@ app.get('/nafahat_api/uploads/formations/:filename', (req, res) => {
 });
 console.log('   ✅ Route directe pour les images activée');
 
-// =============================================
-// FIN DE LA CONFIGURATION STATIQUE
-// =============================================
+// 🔥 Route directe pour les quittances
+app.get('/nafahat_api/uploads/quittances/:filename', (req, res) => {
+    const filePath = path.join(quittancesDir, req.params.filename);
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        if (isProduction) {
+            const altPath = path.join('/var/www/nafahat_api/uploads/quittances', req.params.filename);
+            if (fs.existsSync(altPath)) {
+                return res.sendFile(altPath);
+            }
+        }
+        res.status(404).json({ success: false, message: 'Quittance non trouvée' });
+    }
+});
+console.log('   ✅ Route directe pour les quittances activée');
 
 console.log('✅ Middlewares configurés avec succès');
 
@@ -106,7 +124,9 @@ let typeFormationRoutes;
 let adherentRoutes;
 let chatbotRoutes;
 let cibleRoutes;
+let paymentRoutes; // ✅ NOUVEAU
 
+// Formation
 try {
     formationRoutes = require('./routes/formations');
     console.log('   ✅ Route formations chargée');
@@ -114,6 +134,7 @@ try {
     console.error('   ❌ Erreur chargement formations:', error.message);
 }
 
+// Formateurs
 try {
     formateurRoutes = require('./routes/formateurs');
     console.log('   ✅ Route formateurs chargée');
@@ -121,6 +142,7 @@ try {
     console.error('   ❌ Erreur chargement formateurs:', error.message);
 }
 
+// Catégories
 try {
     categorieRoutes = require('./routes/categories');
     console.log('   ✅ Route categories chargée');
@@ -128,6 +150,7 @@ try {
     console.error('   ❌ Erreur chargement categories:', error.message);
 }
 
+// Upload
 try {
     uploadRoutes = require('./routes/upload');
     console.log('   ✅ Route upload chargée');
@@ -135,6 +158,7 @@ try {
     console.error('   ❌ Erreur chargement upload:', error.message);
 }
 
+// Upload Image
 try {
     uploadImageRoutes = require('./routes/uploadImage');
     console.log('   ✅ Route uploadImage chargée');
@@ -142,6 +166,7 @@ try {
     console.error('   ❌ Erreur chargement uploadImage:', error.message);
 }
 
+// Vidéos
 try {
     videosRoutes = require('./routes/videos');
     console.log('   ✅ Route videos chargée');
@@ -149,6 +174,7 @@ try {
     console.error('   ❌ Erreur chargement videos:', error.message);
 }
 
+// Durée
 try {
     dureeRoutes = require('./routes/duree');
     console.log('   ✅ Route duree chargée');
@@ -156,6 +182,7 @@ try {
     console.error('   ❌ Erreur chargement duree:', error.message);
 }
 
+// Type Formation
 try {
     typeFormationRoutes = require('./routes/typeFormation');
     console.log('   ✅ Route typeFormation chargée');
@@ -163,6 +190,7 @@ try {
     console.error('   ❌ Erreur chargement typeFormation:', error.message);
 }
 
+// Adhérents
 try {
     adherentRoutes = require('./routes/adherentRoutes');
     console.log('   ✅ Route adherentRoutes chargée');
@@ -170,6 +198,7 @@ try {
     console.error('   ❌ Erreur chargement adherentRoutes:', error.message);
 }
 
+// Chatbot
 try {
     chatbotRoutes = require('./routes/chatbot');
     console.log('   ✅ Route chatbot chargée');
@@ -177,11 +206,20 @@ try {
     console.error('   ❌ Erreur chargement chatbot:', error.message);
 }
 
+// Cibles
 try {
     cibleRoutes = require('./routes/cibles');
     console.log('   ✅ Route cibles chargée');
 } catch (error) {
     console.error('   ❌ Erreur chargement cibles:', error.message);
+}
+
+// ✅ NOUVEAU - Routes de paiement
+try {
+    paymentRoutes = require('./routes/paymentRoutes');
+    console.log('   ✅ Route paymentRoutes chargée');
+} catch (error) {
+    console.error('   ❌ Erreur chargement paymentRoutes:', error.message);
 }
 
 // =============================================
@@ -209,7 +247,8 @@ app.get('/api/test', (req, res) => {
             '/api/types-formation',
             '/api/adherents',
             '/api/chatbot',
-            '/api/cibles'
+            '/api/cibles',
+            '/api/payments' // ✅ NOUVEAU
         ]
     });
 });
@@ -367,6 +406,20 @@ if (cibleRoutes) {
     console.log('   ⚠️ /api/cibles non enregistré (route manquante)');
 }
 
+// ✅ NOUVEAU - Routes de paiement
+if (paymentRoutes) {
+    app.use('/api/payments', (req, res, next) => {
+        console.log(`📥 [payments] ${req.method} ${req.url}`);
+        if (req.method === 'POST' || req.method === 'PUT') {
+            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
+        }
+        next();
+    }, paymentRoutes);
+    console.log('   ✅ /api/payments enregistré');
+} else {
+    console.log('   ⚠️ /api/payments non enregistré (route manquante)');
+}
+
 // =============================================
 // ROUTE D'ACCUEIL
 // =============================================
@@ -389,7 +442,15 @@ app.get('/', (req, res) => {
             { method: 'GET,POST,PUT,DELETE', path: '/api/types-formation', description: 'Gestion des types de formation' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/adherents', description: 'Gestion des adhérents' },
             { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' }
+            { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' },
+            // ✅ NOUVEAU - Endpoints de paiement
+            { method: 'POST', path: '/api/payments/initiate', description: 'Initier un paiement' },
+            { method: 'POST', path: '/api/payments/confirm', description: 'Confirmer la modalité de paiement' },
+            { method: 'POST', path: '/api/payments/upload-quittance', description: 'Uploader une quittance' },
+            { method: 'GET', path: '/api/payments/user/:userId', description: 'Paiements d\'un adhérent' },
+            { method: 'GET', path: '/api/payments/formation/:formationId', description: 'Paiements d\'une formation' },
+            { method: 'GET', path: '/api/payments/stats', description: 'Statistiques des paiements' },
+            { method: 'PUT', path: '/api/payments/status/:paymentId', description: 'Mettre à jour le statut d\'un paiement' }
         ]
     });
 });
@@ -415,7 +476,8 @@ app.use((req, res) => {
             '/api/types-formation',
             '/api/adherents',
             '/api/chatbot',
-            '/api/cibles'
+            '/api/cibles',
+            '/api/payments' // ✅ NOUVEAU
         ]
     });
 });
@@ -450,11 +512,13 @@ console.log('   ✅ /api/types-formation');
 console.log('   ✅ /api/adherents');
 console.log('   ✅ /api/chatbot');
 console.log('   ✅ /api/cibles');
+console.log('   ✅ /api/payments'); // ✅ NOUVEAU
 console.log('   ✅ /');
 
 console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
 console.log(`📁 Dossier uploads: ${uploadsDir}`);
 console.log(`📁 Dossier formations: ${formationsDir}`);
+console.log(`📁 Dossier quittances: ${quittancesDir}`);
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
 app.listen(PORT, () => {
@@ -465,13 +529,17 @@ app.listen(PORT, () => {
     console.log(`📋 Durées (sans s): http://localhost:${PORT}/api/duree`);
     console.log(`📋 Chatbot: http://localhost:${PORT}/api/chatbot/categories`);
     console.log(`📋 Cibles: http://localhost:${PORT}/api/cibles`);
+    console.log(`📋 Paiements: http://localhost:${PORT}/api/payments`);
     console.log('\n💡 IMPORTANT:');
     console.log('   - Les images uploadées sont stockées dans uploads/formations/');
+    console.log('   - Les quittances sont stockées dans uploads/quittances/');
     console.log('   - Le frontend appelle /api/upload/image pour uploader les images');
     console.log('   - Le frontend appelle /api/duree (sans "s")');
     console.log('   - Le backend utilise /api/durees (avec "s")');
     console.log('   - La redirection est automatique !');
     console.log('   - Les cibles sont accessibles via /api/cibles');
+    console.log('   - Les paiements sont accessibles via /api/payments');
     console.log(`   - Les images sont servies sur /nafahat_api/uploads/formations/`);
+    console.log(`   - Les quittances sont servies sur /nafahat_api/uploads/quittances/`);
     console.log(`   - Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
 });
