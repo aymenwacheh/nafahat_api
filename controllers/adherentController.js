@@ -20,7 +20,37 @@ https://nafahat.com/connexion
 }
 
 // ============================================================
-// FONCTION : Vérifier si l'utilisateur existe déjà
+// FONCTION UTILITAIRE : Générer le code de vérification
+// ============================================================
+function generateVerificationCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// ============================================================
+// FONCTION UTILITAIRE : Nettoyer les codes expirés
+// ============================================================
+function cleanExpiredCodes() {
+  if (!global.verificationCodes) {
+    global.verificationCodes = {};
+    return;
+  }
+  
+  const now = Date.now();
+  const expiredKeys = [];
+  
+  for (const key in global.verificationCodes) {
+    if (now - global.verificationCodes[key].timestamp > 300000) { // 5 minutes
+      expiredKeys.push(key);
+    }
+  }
+  
+  expiredKeys.forEach(key => {
+    delete global.verificationCodes[key];
+  });
+}
+
+// ============================================================
+// FONCTION UTILITAIRE : Vérifier si l'utilisateur existe déjà
 // ============================================================
 async function checkExistingUser(whatsapp, email) {
   const errors = [];
@@ -55,7 +85,97 @@ async function checkExistingUser(whatsapp, email) {
 }
 
 // ============================================================
-// 1. INSCRIPTION ADHÉRENT (POST)
+// FONCTION UTILITAIRE : Créer l'utilisateur en base de données
+// ============================================================
+async function createUserInDatabase(adherent, enfants) {
+  const connection = await db.pool.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+
+    // Insertion de l'adhérent
+    const [result] = await connection.query(
+      `INSERT INTO adherent 
+        (whatsapp, nom_prenom, pays, ville, email, date_naissance, genre, 
+         source_connaissance, source_autre_detail, objectif, suggestions, accord_publication)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        adherent.whatsapp,
+        adherent.nomPrenom,
+        adherent.pays || '',
+        adherent.ville || '',
+        adherent.email || '',
+        adherent.dateNaissance || new Date().toISOString().split('T')[0],
+        adherent.genre || 'homme',
+        adherent.sourceConnaissance || 'instagram',
+        adherent.sourceAutreDetail || null,
+        adherent.objectif || null,
+        adherent.suggestions || null,
+        adherent.accordPublication ? 1 : 0,
+      ]
+    );
+
+    const adherentId = result.insertId;
+    console.log(`📝 [createUserInDatabase] Adhérent créé avec ID: ${adherentId}`);
+
+    // Génération du mot de passe
+    const motDePasse = `nafa-${adherentId}`;
+
+    // Insertion dans acces_adherent
+    await connection.query(
+      `INSERT INTO acces_adherent 
+        (adherent_id, nom_prenom, whatsapp, mot_de_passe)
+       VALUES (?, ?, ?, ?)`,
+      [
+        adherentId,
+        adherent.nomPrenom,
+        adherent.whatsapp,
+        motDePasse,
+      ]
+    );
+
+    // Insertion des enfants
+    if (enfants && enfants.length > 0) {
+      console.log(`📝 [createUserInDatabase] Insertion de ${enfants.length} enfant(s)...`);
+      for (const enfant of enfants) {
+        await connection.query(
+          `INSERT INTO enfant 
+            (adherent_id, nom_prenom, date_naissance, genre, niveau_tilawa, 
+             memorisation, memorisation_autre_detail, objectif, accord_inscription)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            adherentId,
+            enfant.nomPrenom || '',
+            enfant.dateNaissance || new Date().toISOString().split('T')[0],
+            enfant.genre || 'homme',
+            enfant.niveauTilawa || 'debutant',
+            enfant.memorisation || null,
+            enfant.memorisationAutreDetail || null,
+            enfant.objectif || null,
+            enfant.accordInscription ? 1 : null,
+          ]
+        );
+      }
+    }
+
+    await connection.commit();
+    
+    return {
+      success: true,
+      adherentId: adherentId,
+      motDePasse: motDePasse
+    };
+
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// ============================================================
+// 1. INSCRIPTION ADHÉRENT (POST) - Version directe (sans email)
 // ============================================================
 exports.inscrireAdherent = async (req, res) => {
   const { adherent, enfants } = req.body;
@@ -100,111 +220,30 @@ exports.inscrireAdherent = async (req, res) => {
       });
     }
 
-    const connection = await db.pool.getConnection();
-    
-    try {
-      await connection.beginTransaction();
+    const result = await createUserInDatabase(adherent, enfants);
 
-      // Insertion de l'adhérent
-      console.log('📝 [inscrireAdherent] Insertion adhérent...');
-      const [result] = await connection.query(
-        `INSERT INTO adherent 
-          (whatsapp, nom_prenom, pays, ville, email, date_naissance, genre, 
-           source_connaissance, source_autre_detail, objectif, suggestions, accord_publication)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          adherent.whatsapp,
-          adherent.nomPrenom,
-          adherent.pays || '',
-          adherent.ville || '',
-          adherent.email || '',
-          adherent.dateNaissance || new Date().toISOString().split('T')[0],
-          adherent.genre || 'homme',
-          adherent.sourceConnaissance || 'instagram',
-          adherent.sourceAutreDetail || null,
-          adherent.objectif || null,
-          adherent.suggestions || null,
-          adherent.accordPublication ? 1 : 0,
-        ]
-      );
+    // Construction du message WhatsApp
+    const message = generateWhatsAppMessage(
+      adherent.nomPrenom,
+      adherent.whatsapp,
+      result.motDePasse
+    );
 
-      const adherentId = result.insertId;
-      console.log(`📝 [inscrireAdherent] Adhérent créé avec ID: ${adherentId}`);
+    const cleanPhone = adherent.whatsapp.replace(/[^0-9+]/g, '');
+    const encodedMessage = encodeURIComponent(message);
+    const waUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
 
-      // Génération du mot de passe
-      const motDePasse = `nafa-${adherentId}`;
-
-      // Insertion dans acces_adherent (sans rôle = NULL pour les adhérents)
-      console.log('📝 [inscrireAdherent] Insertion accès...');
-      await connection.query(
-        `INSERT INTO acces_adherent 
-          (adherent_id, nom_prenom, whatsapp, mot_de_passe)
-         VALUES (?, ?, ?, ?)`,
-        [
-          adherentId,
-          adherent.nomPrenom,
-          adherent.whatsapp,
-          motDePasse,
-        ]
-      );
-
-      // Insertion des enfants
-      if (enfants && enfants.length > 0) {
-        console.log(`📝 [inscrireAdherent] Insertion de ${enfants.length} enfant(s)...`);
-        for (const enfant of enfants) {
-          await connection.query(
-            `INSERT INTO enfant 
-              (adherent_id, nom_prenom, date_naissance, genre, niveau_tilawa, 
-               memorisation, memorisation_autre_detail, objectif, accord_inscription)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              adherentId,
-              enfant.nomPrenom || '',
-              enfant.dateNaissance || new Date().toISOString().split('T')[0],
-              enfant.genre || 'homme',
-              enfant.niveauTilawa || 'debutant',
-              enfant.memorisation || null,
-              enfant.memorisationAutreDetail || null,
-              enfant.objectif || null,
-              enfant.accordInscription ? 1 : null,
-            ]
-          );
-        }
-      }
-
-      await connection.commit();
-      console.log('✅ [inscrireAdherent] Transaction validée');
-
-      // Construction du message WhatsApp
-      const message = generateWhatsAppMessage(
-        adherent.nomPrenom,
-        adherent.whatsapp,
-        motDePasse
-      );
-
-      const cleanPhone = adherent.whatsapp.replace(/[^0-9+]/g, '');
-      const encodedMessage = encodeURIComponent(message);
-      const waUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
-
-      res.status(201).json({
-        success: true,
-        message: '🎉 Inscription réussie ! Bienvenue à l\'Académie Nafahat.',
-        adherentId,
-        motDePasse,
-        whatsappUrl: waUrl,
-        credentials: {
-          identifiant: adherent.whatsapp,
-          motDePasse: motDePasse,
-        },
-      });
-
-    } catch (error) {
-      await connection.rollback();
-      console.error('❌ [inscrireAdherent] Erreur transaction:', error);
-      throw error;
-    } finally {
-      connection.release();
-    }
+    res.status(201).json({
+      success: true,
+      message: '🎉 Inscription réussie ! Bienvenue à l\'Académie Nafahat.',
+      adherentId: result.adherentId,
+      motDePasse: result.motDePasse,
+      whatsappUrl: waUrl,
+      credentials: {
+        identifiant: adherent.whatsapp,
+        motDePasse: result.motDePasse,
+      },
+    });
 
   } catch (error) {
     console.error('❌ [inscrireAdherent] Erreur:', error);
@@ -1262,3 +1301,380 @@ exports.deleteUser = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// 13. ENVOYER LE CODE DE VÉRIFICATION PAR EMAIL
+// ============================================================
+exports.sendVerificationCode = async (req, res) => {
+  const { email, whatsapp, nomPrenom } = req.body;
+
+  console.log('═══════════════════════════════════════════════════');
+  console.log('📧 [sendVerificationCode] Début du processus');
+  console.log('📧 [sendVerificationCode] Email destinataire:', email);
+  console.log('📧 [sendVerificationCode] WhatsApp:', whatsapp);
+  console.log('📧 [sendVerificationCode] Nom:', nomPrenom);
+  console.log('📧 [sendVerificationCode] Timestamp:', new Date().toISOString());
+  console.log('═══════════════════════════════════════════════════');
+
+  if (!email || !email.includes('@')) {
+    console.log('❌ [sendVerificationCode] Email invalide:', email);
+    return res.status(400).json({
+      success: false,
+      error: 'Email invalide'
+    });
+  }
+
+  try {
+    // Nettoyer les codes expirés
+    console.log('🧹 [sendVerificationCode] Nettoyage des codes expirés...');
+    cleanExpiredCodes();
+
+    // Générer un code à 6 chiffres
+    const code = generateVerificationCode();
+    console.log('🔑 [sendVerificationCode] Code généré:', code);
+    
+    // Initialiser le stockage global si nécessaire
+    if (!global.verificationCodes) {
+      console.log('📦 [sendVerificationCode] Initialisation du stockage global');
+      global.verificationCodes = {};
+    }
+    
+    // Stocker le code avec les données utilisateur
+    global.verificationCodes[email] = {
+      code: code,
+      whatsapp: whatsapp,
+      nomPrenom: nomPrenom,
+      timestamp: Date.now(),
+      attempts: 0,
+      maxAttempts: 5
+    };
+    console.log('💾 [sendVerificationCode] Code stocké pour:', email);
+    console.log('📊 [sendVerificationCode] Nombre total de codes stockés:', Object.keys(global.verificationCodes).length);
+
+    // ============================================================
+    // ESSAI D'ENVOI AVEC NODEMAILER (si configuré)
+    // ============================================================
+    let emailSent = false;
+    let emailError = null;
+
+    try {
+      // Vérifier si nodemailer est installé
+      let nodemailer;
+      try {
+        nodemailer = require('nodemailer');
+        console.log('📧 [sendVerificationCode] Nodemailer trouvé');
+      } catch (e) {
+        console.log('⚠️ [sendVerificationCode] Nodemailer non installé');
+        console.log('📧 [sendVerificationCode] Pour l\'installer: npm install nodemailer');
+        throw new Error('Nodemailer not installed');
+      }
+
+      // Vérifier les variables d'environnement
+      const emailUser = process.env.EMAIL_USER;
+      const emailPassword = process.env.EMAIL_PASSWORD;
+      
+      if (!emailUser || !emailPassword) {
+        console.log('⚠️ [sendVerificationCode] Variables EMAIL_USER ou EMAIL_PASSWORD non définies');
+        console.log('📧 [sendVerificationCode] Passage en mode SIMULATION');
+        throw new Error('Email credentials not configured');
+      }
+
+      console.log('📧 [sendVerificationCode] Configuration SMTP:');
+      console.log('   - Host:', process.env.SMTP_HOST || 'smtp.gmail.com');
+      console.log('   - Port:', process.env.SMTP_PORT || '587');
+      console.log('   - User:', emailUser);
+      console.log('   - Secure:', process.env.SMTP_SECURE || 'false');
+
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: emailUser,
+          pass: emailPassword
+        },
+        // Ajouter un timeout
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
+      });
+
+      // Vérifier la connexion SMTP
+      console.log('🔌 [sendVerificationCode] Test de connexion SMTP...');
+      await transporter.verify();
+      console.log('✅ [sendVerificationCode] Connexion SMTP établie avec succès');
+
+      const mailOptions = {
+        from: `"Académie Nafahat" <${emailUser}>`,
+        to: email,
+        subject: '🔐 Code de vérification - Académie Nafahat',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
+            <div style="background: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <div style="text-align: center; border-bottom: 3px solid #0D443E; padding-bottom: 20px; margin-bottom: 30px;">
+                <h1 style="color: #0D443E; margin: 0;">📚 Académie Nafahat</h1>
+                <p style="color: #666; margin: 5px 0 0;">Vérification de votre inscription</p>
+              </div>
+              
+              <p>Bonjour <strong>${nomPrenom}</strong>,</p>
+              <p>Merci de vous inscrire à l'Académie Nafahat. Pour finaliser votre inscription, veuillez utiliser le code de vérification ci-dessous :</p>
+              
+              <div style="background: #f0f7f6; border-radius: 12px; padding: 25px; text-align: center; margin: 30px 0; border: 2px dashed #0D443E;">
+                <div style="font-size: 48px; font-weight: bold; color: #0D443E; letter-spacing: 8px; font-family: monospace;">${code}</div>
+                <p style="margin: 10px 0 0; color: #666; font-size: 14px;">⏱️ Ce code est valable <strong>5 minutes</strong></p>
+              </div>
+              
+              <div style="background: #f9f9f9; border-radius: 8px; padding: 15px; margin: 20px 0;">
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+                  <span style="color: #666;">📱 Identifiant</span>
+                  <span style="color: #0D443E; font-weight: 600;">${whatsapp}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                  <span style="color: #666;">👤 Nom</span>
+                  <span style="color: #0D443E; font-weight: 600;">${nomPrenom}</span>
+                </div>
+              </div>
+              
+              <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 16px; border-radius: 4px; margin: 20px 0; font-size: 14px; color: #856404;">
+                ⚠️ Si vous n'avez pas demandé cette vérification, ignorez cet email.
+              </div>
+              
+              <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #999; font-size: 13px;">
+                <p>© 2024 Académie Nafahat - Tous droits réservés</p>
+              </div>
+            </div>
+          </div>
+        `,
+        text: `
+          🔐 Code de vérification - Académie Nafahat
+
+          Bonjour ${nomPrenom},
+
+          Merci de vous inscrire à l'Académie Nafahat.
+          Voici votre code de vérification : ${code}
+
+          ⏱️ Ce code est valable 5 minutes.
+
+          📱 Identifiant : ${whatsapp}
+          👤 Nom : ${nomPrenom}
+
+          © 2024 Académie Nafahat
+        `
+      };
+
+      console.log('📤 [sendVerificationCode] Envoi de l\'email...');
+      console.log('   - De:', mailOptions.from);
+      console.log('   - À:', mailOptions.to);
+      console.log('   - Sujet:', mailOptions.subject);
+
+      const info = await transporter.sendMail(mailOptions);
+      emailSent = true;
+      console.log('✅ [sendVerificationCode] Email envoyé avec succès !');
+      console.log('📋 [sendVerificationCode] Info:', JSON.stringify(info, null, 2));
+      console.log('   - Message ID:', info.messageId);
+      console.log('   - Response:', info.response);
+      
+    } catch (nodemailerError) {
+      emailError = nodemailerError;
+      console.error('❌ [sendVerificationCode] Erreur nodemailer:', nodemailerError.message);
+      console.log('📧 [sendVerificationCode] Passage en mode SIMULATION suite à l\'erreur');
+    }
+
+    // ============================================================
+    // SIMULATION (si nodemailer n'est pas configuré ou a échoué)
+    // ============================================================
+    if (!emailSent) {
+      console.log('═══════════════════════════════════════════════════');
+      console.log('📧 [sendVerificationCode] MODE SIMULATION');
+      console.log('📧 [sendVerificationCode] Le code a été généré mais NON envoyé par email');
+      console.log('📧 [sendVerificationCode] Pour recevoir un vrai email:');
+      console.log('   1. npm install nodemailer');
+      console.log('   2. Configurez EMAIL_USER et EMAIL_PASSWORD dans .env');
+      console.log('═══════════════════════════════════════════════════');
+      console.log('📋 Code de vérification (copiez-le) :', code);
+      console.log('📧 Email destinataire :', email);
+      console.log('═══════════════════════════════════════════════════');
+      
+      if (emailError) {
+        console.log('⚠️ Raison de l\'échec:', emailError.message);
+      }
+    }
+
+    // ============================================================
+    // RÉPONSE
+    // ============================================================
+    const response = {
+      success: true,
+      message: emailSent 
+        ? '✅ Code de vérification envoyé par email' 
+        : '📧 Code de vérification généré (SIMULATION)',
+      emailSent: emailSent,
+    };
+
+    // En développement, on retourne le code pour faciliter les tests
+    if (process.env.NODE_ENV === 'development') {
+      response.code = code;
+      console.log('🔑 [sendVerificationCode] Code retourné dans la réponse (DEV)');
+    }
+
+    console.log('📤 [sendVerificationCode] Réponse envoyée');
+    console.log('═══════════════════════════════════════════════════');
+    
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error('═══════════════════════════════════════════════════');
+    console.error('❌ [sendVerificationCode] ERREUR CRITIQUE');
+    console.error('❌ [sendVerificationCode] Message:', error.message);
+    console.error('❌ [sendVerificationCode] Stack:', error.stack);
+    console.error('═══════════════════════════════════════════════════');
+    
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de l\'envoi du code de vérification: ' + error.message
+    });
+  }
+};
+
+// ============================================================
+// 14. VALIDER LE CODE DE VÉRIFICATION ET CRÉER L'UTILISATEUR
+// ============================================================
+exports.verifyCodeAndCreateUser = async (req, res) => {
+  const { email, code, adherent, enfants } = req.body;
+
+  console.log('✅ [verifyCodeAndCreateUser] Vérification du code pour:', email);
+
+  if (!email || !code) {
+    return res.status(400).json({
+      success: false,
+      error: 'Email et code requis'
+    });
+  }
+
+  try {
+    // Nettoyer les codes expirés
+    cleanExpiredCodes();
+
+    // Vérifier le code stocké
+    if (!global.verificationCodes || !global.verificationCodes[email]) {
+      return res.status(400).json({
+        success: false,
+        error: 'Aucun code de vérification trouvé pour cet email. Veuillez en demander un nouveau.'
+      });
+    }
+
+    const storedData = global.verificationCodes[email];
+    const now = Date.now();
+
+    // Vérifier l'expiration (5 minutes)
+    if (now - storedData.timestamp > 300000) {
+      delete global.verificationCodes[email];
+      return res.status(400).json({
+        success: false,
+        error: 'Le code de vérification a expiré. Veuillez en demander un nouveau.'
+      });
+    }
+
+    // Vérifier le nombre de tentatives
+    storedData.attempts = (storedData.attempts || 0) + 1;
+    if (storedData.attempts > storedData.maxAttempts) {
+      delete global.verificationCodes[email];
+      return res.status(400).json({
+        success: false,
+        error: 'Trop de tentatives. Veuillez demander un nouveau code.'
+      });
+    }
+
+    // Vérifier le code
+    if (storedData.code !== code) {
+      return res.status(400).json({
+        success: false,
+        error: `Code de vérification incorrect. ${storedData.maxAttempts - storedData.attempts} tentative(s) restante(s).`
+      });
+    }
+
+    // ✅ Code valide - Supprimer le code utilisé
+    delete global.verificationCodes[email];
+
+    // Utiliser les données fournies dans la requête ou celles stockées
+    const finalAdherent = adherent || {
+      whatsapp: storedData.whatsapp,
+      nomPrenom: storedData.nomPrenom,
+      email: email,
+      pays: '',
+      ville: '',
+      dateNaissance: new Date().toISOString().split('T')[0],
+      genre: 'homme',
+      sourceConnaissance: 'instagram',
+      sourceAutreDetail: null,
+      objectif: null,
+      suggestions: null,
+      accordPublication: false
+    };
+
+    // Vérifier les doublons avant la création
+    const errors = await checkExistingUser(finalAdherent.whatsapp, finalAdherent.email);
+    
+    if (errors.length > 0) {
+      const fieldErrors = {};
+      errors.forEach(err => {
+        fieldErrors[err.field] = err.message;
+      });
+      
+      return res.status(409).json({
+        success: false,
+        error: 'Certaines informations sont déjà utilisées.',
+        fieldErrors: fieldErrors
+      });
+    }
+
+    // Créer l'utilisateur
+    const createResult = await createUserInDatabase(finalAdherent, enfants || []);
+
+    if (createResult.success) {
+      // Générer le message WhatsApp
+      const message = generateWhatsAppMessage(
+        finalAdherent.nomPrenom,
+        finalAdherent.whatsapp,
+        createResult.motDePasse
+      );
+
+      const cleanPhone = finalAdherent.whatsapp.replace(/[^0-9+]/g, '');
+      const encodedMessage = encodeURIComponent(message);
+      const waUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+
+      res.status(201).json({
+        success: true,
+        message: '✅ Inscription réussie ! Bienvenue à l\'Académie Nafahat.',
+        adherentId: createResult.adherentId,
+        motDePasse: createResult.motDePasse,
+        whatsappUrl: waUrl,
+        credentials: {
+          identifiant: finalAdherent.whatsapp,
+          motDePasse: createResult.motDePasse,
+        }
+      });
+    } else {
+      throw new Error(createResult.error || 'Erreur lors de la création du compte');
+    }
+
+  } catch (error) {
+    console.error('❌ [verifyCodeAndCreateUser] Erreur:', error);
+    
+    // Gérer les erreurs de duplication
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        success: false,
+        error: 'Ces informations sont déjà enregistrées.',
+        code: error.code
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Erreur lors de la création du compte'
+    });
+  }
+};
+
+module.exports = exports;

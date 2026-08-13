@@ -124,7 +124,8 @@ let typeFormationRoutes;
 let adherentRoutes;
 let chatbotRoutes;
 let cibleRoutes;
-let paymentRoutes; // ✅ NOUVEAU
+let paymentRoutes;
+let aboutRoutes; // 👈 NOUVEAU
 
 // Formation
 try {
@@ -214,12 +215,20 @@ try {
     console.error('   ❌ Erreur chargement cibles:', error.message);
 }
 
-// ✅ NOUVEAU - Routes de paiement
+// Paiements
 try {
     paymentRoutes = require('./routes/paymentRoutes');
     console.log('   ✅ Route paymentRoutes chargée');
 } catch (error) {
     console.error('   ❌ Erreur chargement paymentRoutes:', error.message);
+}
+
+// 👈 NOUVEAU: About
+try {
+    aboutRoutes = require('./routes/aboutRoutes');
+    console.log('   ✅ Route aboutRoutes chargée');
+} catch (error) {
+    console.error('   ❌ Erreur chargement aboutRoutes:', error.message);
 }
 
 // =============================================
@@ -248,7 +257,8 @@ app.get('/api/test', (req, res) => {
             '/api/adherents',
             '/api/chatbot',
             '/api/cibles',
-            '/api/payments' // ✅ NOUVEAU
+            '/api/payments',
+            '/api/about' // 👈 NOUVEAU
         ]
     });
 });
@@ -406,7 +416,7 @@ if (cibleRoutes) {
     console.log('   ⚠️ /api/cibles non enregistré (route manquante)');
 }
 
-// ✅ NOUVEAU - Routes de paiement
+// Payment routes
 if (paymentRoutes) {
     app.use('/api/payments', (req, res, next) => {
         console.log(`📥 [payments] ${req.method} ${req.url}`);
@@ -418,6 +428,20 @@ if (paymentRoutes) {
     console.log('   ✅ /api/payments enregistré');
 } else {
     console.log('   ⚠️ /api/payments non enregistré (route manquante)');
+}
+
+// 👈 NOUVEAU: About routes
+if (aboutRoutes) {
+    app.use('/api/about', (req, res, next) => {
+        console.log(`📥 [about] ${req.method} ${req.url}`);
+        if (req.method === 'POST' || req.method === 'PUT') {
+            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
+        }
+        next();
+    }, aboutRoutes);
+    console.log('   ✅ /api/about enregistré');
+} else {
+    console.log('   ⚠️ /api/about non enregistré (route manquante)');
 }
 
 // =============================================
@@ -443,14 +467,8 @@ app.get('/', (req, res) => {
             { method: 'GET,POST,PUT,DELETE', path: '/api/adherents', description: 'Gestion des adhérents' },
             { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' },
-            // ✅ NOUVEAU - Endpoints de paiement
-            { method: 'POST', path: '/api/payments/initiate', description: 'Initier un paiement' },
-            { method: 'POST', path: '/api/payments/confirm', description: 'Confirmer la modalité de paiement' },
-            { method: 'POST', path: '/api/payments/upload-quittance', description: 'Uploader une quittance' },
-            { method: 'GET', path: '/api/payments/user/:userId', description: 'Paiements d\'un adhérent' },
-            { method: 'GET', path: '/api/payments/formation/:formationId', description: 'Paiements d\'une formation' },
-            { method: 'GET', path: '/api/payments/stats', description: 'Statistiques des paiements' },
-            { method: 'PUT', path: '/api/payments/status/:paymentId', description: 'Mettre à jour le statut d\'un paiement' }
+            { method: 'GET,POST,PUT,DELETE', path: '/api/payments', description: 'Gestion des paiements' },
+            { method: 'GET,POST,PUT,DELETE', path: '/api/about', description: 'Gestion de la page "À propos"' } // 👈 NOUVEAU
         ]
     });
 });
@@ -477,7 +495,8 @@ app.use((req, res) => {
             '/api/adherents',
             '/api/chatbot',
             '/api/cibles',
-            '/api/payments' // ✅ NOUVEAU
+            '/api/payments',
+            '/api/about' // 👈 NOUVEAU
         ]
     });
 });
@@ -512,7 +531,8 @@ console.log('   ✅ /api/types-formation');
 console.log('   ✅ /api/adherents');
 console.log('   ✅ /api/chatbot');
 console.log('   ✅ /api/cibles');
-console.log('   ✅ /api/payments'); // ✅ NOUVEAU
+console.log('   ✅ /api/payments');
+console.log('   ✅ /api/about'); // 👈 NOUVEAU
 console.log('   ✅ /');
 
 console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
@@ -524,6 +544,7 @@ console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
 app.listen(PORT, () => {
     console.log(`✅ Serveur démarré sur http://localhost:${PORT}`);
     console.log(`📋 Testez l'API: http://localhost:${PORT}/api/test`);
+    console.log(`📋 About: http://localhost:${PORT}/api/about`);
     console.log(`📋 Upload image: http://localhost:${PORT}/api/upload/image`);
     console.log(`📋 Durées (avec s): http://localhost:${PORT}/api/durees`);
     console.log(`📋 Durées (sans s): http://localhost:${PORT}/api/duree`);
@@ -539,6 +560,7 @@ app.listen(PORT, () => {
     console.log('   - La redirection est automatique !');
     console.log('   - Les cibles sont accessibles via /api/cibles');
     console.log('   - Les paiements sont accessibles via /api/payments');
+    console.log('   - La page "À propos" est accessible via /api/about');
     console.log(`   - Les images sont servies sur /nafahat_api/uploads/formations/`);
     console.log(`   - Les quittances sont servies sur /nafahat_api/uploads/quittances/`);
     console.log(`   - Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
