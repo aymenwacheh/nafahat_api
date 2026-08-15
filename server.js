@@ -125,7 +125,8 @@ let adherentRoutes;
 let chatbotRoutes;
 let cibleRoutes;
 let paymentRoutes;
-let aboutRoutes; // 👈 NOUVEAU
+let aboutRoutes;
+let cmplUserRoutes; // ✅ NOUVEAU
 
 // Formation
 try {
@@ -223,12 +224,20 @@ try {
     console.error('   ❌ Erreur chargement paymentRoutes:', error.message);
 }
 
-// 👈 NOUVEAU: About
+// About
 try {
     aboutRoutes = require('./routes/aboutRoutes');
     console.log('   ✅ Route aboutRoutes chargée');
 } catch (error) {
     console.error('   ❌ Erreur chargement aboutRoutes:', error.message);
+}
+
+// ✅ NOUVEAU: CmplUser
+try {
+    cmplUserRoutes = require('./routes/cmplUserRoutes');
+    console.log('   ✅ Route cmplUserRoutes chargée');
+} catch (error) {
+    console.error('   ❌ Erreur chargement cmplUserRoutes:', error.message);
 }
 
 // =============================================
@@ -258,7 +267,8 @@ app.get('/api/test', (req, res) => {
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
-            '/api/about' // 👈 NOUVEAU
+            '/api/about',
+            '/api/adherents/:id/formations/:fid/*' // ✅ NOUVEAU: Routes CmplUser
         ]
     });
 });
@@ -391,6 +401,20 @@ if (adherentRoutes) {
     console.log('   ⚠️ /api/adherents non enregistré (route manquante)');
 }
 
+// ✅ NOUVEAU: CmplUser routes (attaché à /api/adherents)
+if (cmplUserRoutes) {
+    app.use('/api/adherents', (req, res, next) => {
+        console.log(`📥 [cmplUser] ${req.method} ${req.url}`);
+        if (req.method === 'POST' || req.method === 'PUT') {
+            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
+        }
+        next();
+    }, cmplUserRoutes);
+    console.log('   ✅ /api/adherents/:id/formations/:fid/* enregistré (CmplUser)');
+} else {
+    console.log('   ⚠️ Routes CmplUser non enregistrées (route manquante)');
+}
+
 // Chatbot routes
 if (chatbotRoutes) {
     app.use('/api/chatbot', (req, res, next) => {
@@ -430,7 +454,7 @@ if (paymentRoutes) {
     console.log('   ⚠️ /api/payments non enregistré (route manquante)');
 }
 
-// 👈 NOUVEAU: About routes
+// About routes
 if (aboutRoutes) {
     app.use('/api/about', (req, res, next) => {
         console.log(`📥 [about] ${req.method} ${req.url}`);
@@ -468,7 +492,14 @@ app.get('/', (req, res) => {
             { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/payments', description: 'Gestion des paiements' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/about', description: 'Gestion de la page "À propos"' } // 👈 NOUVEAU
+            { method: 'GET,POST,PUT,DELETE', path: '/api/about', description: 'Gestion de la page "À propos"' },
+            // ✅ NOUVEAU: Routes CmplUser
+            { method: 'GET', path: '/api/adherents/:id/formations/:fid/check-cmpl', description: 'Vérifier si les infos Cmpl existent' },
+            { method: 'GET', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Récupérer les infos Cmpl' },
+            { method: 'POST', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Sauvegarder les infos Cmpl' },
+            { method: 'PUT', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Mettre à jour les infos Cmpl' },
+            { method: 'DELETE', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Supprimer les infos Cmpl' },
+            { method: 'GET', path: '/api/adherents/formations/:fid/is-religieuse', description: 'Vérifier si formation religieuse' }
         ]
     });
 });
@@ -496,7 +527,8 @@ app.use((req, res) => {
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
-            '/api/about' // 👈 NOUVEAU
+            '/api/about',
+            '/api/adherents/:id/formations/:fid/*' // ✅ NOUVEAU
         ]
     });
 });
@@ -532,7 +564,10 @@ console.log('   ✅ /api/adherents');
 console.log('   ✅ /api/chatbot');
 console.log('   ✅ /api/cibles');
 console.log('   ✅ /api/payments');
-console.log('   ✅ /api/about'); // 👈 NOUVEAU
+console.log('   ✅ /api/about');
+console.log('   ✅ /api/adherents/:id/formations/:fid/check-cmpl (CmplUser)');
+console.log('   ✅ /api/adherents/:id/formations/:fid/cmpl (CmplUser - GET, POST, PUT, DELETE)');
+console.log('   ✅ /api/adherents/formations/:fid/is-religieuse (CmplUser)');
 console.log('   ✅ /');
 
 console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
@@ -551,6 +586,7 @@ app.listen(PORT, () => {
     console.log(`📋 Chatbot: http://localhost:${PORT}/api/chatbot/categories`);
     console.log(`📋 Cibles: http://localhost:${PORT}/api/cibles`);
     console.log(`📋 Paiements: http://localhost:${PORT}/api/payments`);
+    console.log(`📋 CmplUser: http://localhost:${PORT}/api/adherents/1/formations/1/check-cmpl`);
     console.log('\n💡 IMPORTANT:');
     console.log('   - Les images uploadées sont stockées dans uploads/formations/');
     console.log('   - Les quittances sont stockées dans uploads/quittances/');
@@ -561,6 +597,7 @@ app.listen(PORT, () => {
     console.log('   - Les cibles sont accessibles via /api/cibles');
     console.log('   - Les paiements sont accessibles via /api/payments');
     console.log('   - La page "À propos" est accessible via /api/about');
+    console.log('   - Les routes CmplUser sont accessibles via /api/adherents/:id/formations/:fid/*');
     console.log(`   - Les images sont servies sur /nafahat_api/uploads/formations/`);
     console.log(`   - Les quittances sont servies sur /nafahat_api/uploads/quittances/`);
     console.log(`   - Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
