@@ -1,7 +1,7 @@
 // nafahat_api/controllers/paymentController.js
 
 const Paiement = require('../models/Paiement');
-const db = require('../config/database'); // ✅ Importer db (qui contient query)
+const db = require('../config/database');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -27,9 +27,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
-  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: function (req, file, cb) {
     const allowedTypes = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
     const extension = path.extname(file.originalname).toLowerCase().substring(1);
@@ -42,20 +40,19 @@ const upload = multer({
 }).single('quittance');
 
 class PaymentController {
+
   /**
    * Initier un paiement
    * POST /api/payments/initiate
    */
   static async initiatePayment(req, res) {
     try {
-      // ✅ Support des deux formats de noms de champs
       const formationId = req.body.formationId || req.body.formation_id;
       const userId = req.body.userId || req.body.user_id;
       const currency = req.body.currency;
 
       console.log('🔵 [PaymentController] Initiation paiement:', { formationId, userId, currency });
 
-      // Vérifier les données requises
       if (!formationId || !userId || !currency) {
         return res.status(400).json({
           success: false,
@@ -63,7 +60,6 @@ class PaymentController {
         });
       }
 
-      // ✅ Utiliser db.query au lieu de pool.execute
       const [adherentRows] = await db.query(
         'SELECT * FROM adherent WHERE id = ?',
         [userId]
@@ -77,9 +73,6 @@ class PaymentController {
         });
       }
 
-      console.log('🟢 [PaymentController] Adhérent trouvé:', adherent.nom_prenom);
-
-      // ✅ Utiliser db.query au lieu de pool.execute
       const [formationRows] = await db.query(
         'SELECT * FROM formation WHERE id = ?',
         [formationId]
@@ -93,17 +86,13 @@ class PaymentController {
         });
       }
 
-      console.log('🟢 [PaymentController] Formation trouvée:', formation.titre_fr);
-
-      // Déterminer le prix selon la devise
       const prix = PaymentController.getPriceByCurrency(formation, currency);
 
-      // Créer une référence de paiement unique
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const random = Math.random().toString(36).substring(2, 8).toUpperCase();
       const reference = 'PAY-' + dateStr + '-' + random;
 
-      // Créer le paiement
+      // ✅ CRÉATION DU PAIEMENT AVEC STATUT "en_attente"
       const paymentId = await Paiement.create({
         adherent_id: userId,
         adherent_nom_prenom: adherent.nom_prenom,
@@ -114,7 +103,7 @@ class PaymentController {
         formation_prix: prix,
         formation_devise: currency,
         modalite_paiement: 'en_attente',
-        statut_paiement: 'en_attente',
+        statut_paiement: 'en_attente', // ✅ CORRECT : toujours en attente
         montant_paye: prix,
         reference_paiement: reference,
         commentaire: 'Paiement initié depuis l\'application'

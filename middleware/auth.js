@@ -6,6 +6,18 @@ exports.protect = async (req, res, next) => {
     try {
         let token;
 
+        // 🔥 MODE DÉVELOPPEMENT : Simuler un utilisateur admin
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('🔓 [DEV MODE] Authentification automatique');
+            req.user = { 
+                id: 9,
+                role_id: 5,
+                role_nom: 'super_admin',
+                nom_prenom: 'Super Admin'
+            };
+            return next();
+        }
+
         // Vérifier si le token est dans le header Authorization
         if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
             token = req.headers.authorization.split(' ')[1];
@@ -37,6 +49,12 @@ exports.protect = async (req, res, next) => {
 // Middleware pour vérifier les rôles
 exports.authorize = (...roles) => {
     return (req, res, next) => {
+        // 🔥 MODE DÉVELOPPEMENT : Autoriser tout
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`🔓 [DEV MODE] Autorisation accordée pour: ${req.user?.nom_prenom || 'Admin'}`);
+            return next();
+        }
+
         if (!req.user) {
             return res.status(401).json({
                 success: false,
