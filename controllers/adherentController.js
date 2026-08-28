@@ -1855,5 +1855,275 @@ exports.changePassword = async (req, res) => {
     });
   }
 };
+// ============================================================
+// 12. GESTION DES UTILISATEURS (SUPER ADMIN) - AVEC PAGINATION
+// ============================================================
+
+// 12b. LISTE DES UTILISATEURS AVEC PAGINATION, RECHERCHE, TRI, FILTRES (GET)
+exports.getUsersPaginated = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || '';
+    const role = req.query.role || 'tous';
+    const sort = req.query.sort || 'id';
+    const order = req.query.order || 'desc';
+
+    // Construction de la requête
+    let whereClause = '1=1';
+    const params = [];
+
+    // Recherche
+    if (search.trim() !== '') {
+      whereClause += ` AND (a.nom_prenom LIKE ? OR a.whatsapp LIKE ? OR a.email LIKE ?)`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    // Filtre par rôle
+    if (role !== 'tous') {
+      whereClause += ` AND r.nom = ?`;
+      params.push(role);
+    }
+
+    // Mapping des colonnes de tri
+    const sortMapping = {
+      'id': 'a.id',
+      'nom_prenom': 'a.nom_prenom',
+      'role_libelle': 'r.libelle',
+      'whatsapp': 'a.whatsapp',
+      'email': 'a.email',
+    };
+    const sortColumn = sortMapping[sort] || 'a.id';
+    const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    // Requête principale
+    const query = `
+      SELECT 
+        a.id,
+        a.whatsapp,
+        a.nom_prenom,
+        a.email,
+        a.pays,
+        a.ville,
+        a.accord_publication,
+        a.created_at as date_inscription,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle,
+        acc.mot_de_passe,
+        acc.active
+      FROM adherent a
+      JOIN acces_adherent acc ON a.id = acc.adherent_id
+      LEFT JOIN roles r ON acc.role_id = r.id
+      WHERE ${whereClause}
+      ORDER BY ${sortColumn} ${sortOrder}
+      LIMIT ? OFFSET ?
+    `;
+
+    // Requête pour le comptage total
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM adherent a
+      JOIN acces_adherent acc ON a.id = acc.adherent_id
+      LEFT JOIN roles r ON acc.role_id = r.id
+      WHERE ${whereClause}
+    `;
+
+    const paramsWithPagination = [...params, limit, offset];
+
+    console.log('📝 [getUsersPaginated] Requête:', query);
+    console.log('📝 [getUsersPaginated] Paramètres:', paramsWithPagination);
+
+    const [rows] = await db.query(query, paramsWithPagination);
+    const [countResult] = await db.query(countQuery, params);
+
+    // Récupérer la liste des rôles disponibles
+    const [rolesResult] = await db.query('SELECT DISTINCT nom FROM roles ORDER BY nom');
+
+    const total = countResult[0]?.total || 0;
+    const totalPages = Math.ceil(total / limit);
+
+    res.status(200).json({
+      success: true,
+      data: rows,
+      count: total,
+      totalPages: totalPages,
+      currentPage: page,
+      limit: limit,
+      roles: rolesResult.map(r => r.nom).filter(n => n !== null && n !== ''),
+      pagination: {
+        total: total,
+        totalPages: totalPages,
+        currentPage: page,
+        perPage: limit,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [getUsersPaginated] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur: ' + error.message
+    });
+  }
+};
+
+// ============================================================
+// 12c. UTILISATEUR PAR ID (GET)
+// ============================================================
+exports.getUserById = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+        a.id,
+        a.whatsapp,
+        a.nom_prenom,
+        a.email,
+        a.pays,
+        a.ville,
+        a.date_naissance,
+        a.genre,
+        a.accord_publication,
+        a.created_at,
+        a.updated_at,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle,
+        acc.mot_de_passe,
+        acc.active
+       FROM adherent a
+       JOIN acces_adherent acc ON a.id = acc.adherent_id
+       LEFT JOIN roles r ON acc.role_id = r.id
+       WHERE a.id = ?`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Utilisateur non trouvé'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: rows[0]
+    });
+  } catch (error) {
+    console.error('❌ [getUserById] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// ============================================================
+// 12d. CHANGER LE STATUT D'UN UTILISATEUR (PUT)
+// ============================================================
+exports.toggleUserStatus = async (req, res) => {
+  const { id } = req.params;
+  const { active } = req.body;
+
+  try {
+    // Vérifier que l'utilisateur existe
+    const [existing] = await db.query(
+      'SELECT a.id, acc.active FROM adherent a JOIN acces_adherent acc ON a.id = acc.adherent_id WHERE a.id = ?',
+      [id]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Utilisateur non trouvé'
+      });
+    }
+
+    const newStatus = active !== undefined ? active : !existing[0].active;
+
+    await db.query(
+      `UPDATE acces_adherent SET active = ?, updated_at = NOW() WHERE adherent_id = ?`,
+      [newStatus ? 1 : 0, id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: newStatus ? '✅ Utilisateur activé' : '✅ Utilisateur désactivé',
+      active: newStatus
+    });
+  } catch (error) {
+    console.error('❌ [toggleUserStatus] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur: ' + error.message
+    });
+  }
+};
+
+// ============================================================
+// 12e. SUPPRIMER UN UTILISATEUR (DELETE)
+// ============================================================
+exports.deleteUser = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const connection = await db.pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      // Supprimer d'abord les enfants
+      await connection.query(
+        'DELETE FROM enfant WHERE adherent_id = ?',
+        [id]
+      );
+
+      // Supprimer l'accès
+      await connection.query(
+        'DELETE FROM acces_adherent WHERE adherent_id = ?',
+        [id]
+      );
+
+      // Supprimer l'adhérent
+      const [result] = await connection.query(
+        'DELETE FROM adherent WHERE id = ?',
+        [id]
+      );
+
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        return res.status(404).json({
+          success: false,
+          error: 'Utilisateur non trouvé'
+        });
+      }
+
+      await connection.commit();
+
+      res.status(200).json({
+        success: true,
+        message: '✅ Utilisateur supprimé avec succès'
+      });
+
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('❌ [deleteUser] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur: ' + error.message
+    });
+  }
+};
 
 module.exports = exports;

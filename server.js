@@ -122,12 +122,13 @@ let videosRoutes;
 let dureeRoutes;
 let typeFormationRoutes;
 let adherentRoutes;
+let adminRoutes; // ✅ NOUVEAU
 let chatbotRoutes;
 let cibleRoutes;
 let paymentRoutes;
 let aboutRoutes;
 let cmplUserRoutes;
-let paiementValidationRoutes; // ✅ NOUVEAU
+let paiementValidationRoutes;
 
 // Formation
 try {
@@ -201,6 +202,14 @@ try {
     console.error('   ❌ Erreur chargement adherentRoutes:', error.message);
 }
 
+// ✅ NOUVEAU: Admin Routes
+try {
+    adminRoutes = require('./routes/adminRoutes');
+    console.log('   ✅ Route adminRoutes chargée');
+} catch (error) {
+    console.error('   ❌ Erreur chargement adminRoutes:', error.message);
+}
+
 // Chatbot
 try {
     chatbotRoutes = require('./routes/chatbot');
@@ -241,7 +250,7 @@ try {
     console.error('   ❌ Erreur chargement cmplUserRoutes:', error.message);
 }
 
-// ✅ NOUVEAU: Paiement Validation
+// Paiement Validation
 try {
     paiementValidationRoutes = require('./routes/paiementValidationRoutes');
     console.log('   ✅ Route paiementValidationRoutes chargée');
@@ -273,12 +282,13 @@ app.get('/api/test', (req, res) => {
             '/api/duree',
             '/api/types-formation',
             '/api/adherents',
+            '/api/admin', // ✅ NOUVEAU
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
             '/api/about',
             '/api/adherents/:id/formations/:fid/*',
-            '/api/admin/paiement-validation' // ✅ NOUVEAU
+            '/api/admin/paiement-validation'
         ]
     });
 });
@@ -411,6 +421,20 @@ if (adherentRoutes) {
     console.log('   ⚠️ /api/adherents non enregistré (route manquante)');
 }
 
+// ✅ NOUVEAU: Admin routes - Gestion des utilisateurs
+if (adminRoutes) {
+    app.use('/api/admin', (req, res, next) => {
+        console.log(`📥 [admin] ${req.method} ${req.url}`);
+        if (req.method === 'POST' || req.method === 'PUT') {
+            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
+        }
+        next();
+    }, adminRoutes);
+    console.log('   ✅ /api/admin enregistré');
+} else {
+    console.log('   ⚠️ /api/admin non enregistré (route manquante)');
+}
+
 // CmplUser routes
 if (cmplUserRoutes) {
     app.use('/api/adherents', (req, res, next) => {
@@ -478,7 +502,7 @@ if (aboutRoutes) {
     console.log('   ⚠️ /api/about non enregistré (route manquante)');
 }
 
-// ✅ NOUVEAU: Paiement Validation routes
+// Paiement Validation routes
 if (paiementValidationRoutes) {
     app.use('/api/admin/paiement-validation', (req, res, next) => {
         console.log(`📥 [paiement-validation] ${req.method} ${req.url}`);
@@ -513,6 +537,7 @@ app.get('/', (req, res) => {
             { method: 'GET,POST,PUT,DELETE', path: '/api/duree', description: 'Gestion des durées (SANS "s") - REDIRECTION' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/types-formation', description: 'Gestion des types de formation' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/adherents', description: 'Gestion des adhérents' },
+            { method: 'GET,POST,PUT,DELETE', path: '/api/admin', description: '✅ Gestion des utilisateurs (Admin)' },
             { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' },
             { method: 'GET,POST,PUT,DELETE', path: '/api/payments', description: 'Gestion des paiements' },
@@ -523,7 +548,6 @@ app.get('/', (req, res) => {
             { method: 'PUT', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Mettre à jour les infos Cmpl' },
             { method: 'DELETE', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Supprimer les infos Cmpl' },
             { method: 'GET', path: '/api/adherents/formations/:fid/is-religieuse', description: 'Vérifier si formation religieuse' },
-            // ✅ NOUVEAU
             { method: 'GET', path: '/api/admin/paiement-validation/list', description: 'Liste des validations' },
             { method: 'GET', path: '/api/admin/paiement-validation/stats', description: 'Statistiques des validations' },
             { method: 'GET', path: '/api/admin/paiement-validation/paiement/:id', description: 'Validations d\'un paiement' },
@@ -554,12 +578,13 @@ app.use((req, res) => {
             '/api/duree',
             '/api/types-formation',
             '/api/adherents',
+            '/api/admin', // ✅ NOUVEAU
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
             '/api/about',
             '/api/adherents/:id/formations/:fid/*',
-            '/api/admin/paiement-validation' // ✅ NOUVEAU
+            '/api/admin/paiement-validation'
         ]
     });
 });
@@ -592,6 +617,7 @@ console.log('   ✅ /api/durees (AVEC "s")');
 console.log('   ✅ /api/duree (SANS "s") - REDIRECTION');
 console.log('   ✅ /api/types-formation');
 console.log('   ✅ /api/adherents');
+console.log('   ✅ /api/admin (✅ NOUVEAU - Gestion des utilisateurs)');
 console.log('   ✅ /api/chatbot');
 console.log('   ✅ /api/cibles');
 console.log('   ✅ /api/payments');
@@ -599,7 +625,7 @@ console.log('   ✅ /api/about');
 console.log('   ✅ /api/adherents/:id/formations/:fid/check-cmpl (CmplUser)');
 console.log('   ✅ /api/adherents/:id/formations/:fid/cmpl (CmplUser - GET, POST, PUT, DELETE)');
 console.log('   ✅ /api/adherents/formations/:fid/is-religieuse (CmplUser)');
-console.log('   ✅ /api/admin/paiement-validation (PaiementValidation)'); // ✅ NOUVEAU
+console.log('   ✅ /api/admin/paiement-validation (PaiementValidation)');
 console.log('   ✅ /');
 
 console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
@@ -619,7 +645,8 @@ app.listen(PORT, () => {
     console.log(`📋 Cibles: http://localhost:${PORT}/api/cibles`);
     console.log(`📋 Paiements: http://localhost:${PORT}/api/payments`);
     console.log(`📋 CmplUser: http://localhost:${PORT}/api/adherents/1/formations/1/check-cmpl`);
-    console.log(`📋 Paiement Validation: http://localhost:${PORT}/api/admin/paiement-validation/list`); // ✅ NOUVEAU
+    console.log(`📋 Admin Users: http://localhost:${PORT}/api/admin/users`); // ✅ NOUVEAU
+    console.log(`📋 Paiement Validation: http://localhost:${PORT}/api/admin/paiement-validation/list`);
     console.log('\n💡 IMPORTANT:');
     console.log('   - Les images uploadées sont stockées dans uploads/formations/');
     console.log('   - Les quittances sont stockées dans uploads/quittances/');
@@ -631,6 +658,7 @@ app.listen(PORT, () => {
     console.log('   - Les paiements sont accessibles via /api/payments');
     console.log('   - La page "À propos" est accessible via /api/about');
     console.log('   - Les routes CmplUser sont accessibles via /api/adherents/:id/formations/:fid/*');
+    console.log('   - Les routes Admin sont accessibles via /api/admin/* (✅ NOUVEAU)');
     console.log('   - Les routes PaiementValidation sont accessibles via /api/admin/paiement-validation/*');
     console.log(`   - Les images sont servies sur /nafahat_api/uploads/formations/`);
     console.log(`   - Les quittances sont servies sur /nafahat_api/uploads/quittances/`);
