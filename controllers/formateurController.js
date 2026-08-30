@@ -3,9 +3,10 @@ const db = require('../config/database');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
 
 // ============================================================
-// CONSTANTES - DOSSIER D'UPLOAD
+// CONFIGURATION MULTER POUR LES PHOTOS DE FORMATEURS
 // ============================================================
 const UPLOAD_DIR = path.join(__dirname, '../uploads/formateurs');
 
@@ -15,55 +16,86 @@ if (!fs.existsSync(UPLOAD_DIR)) {
     console.log('   📁 Dossier "uploads/formateurs" créé');
 }
 
+// Configuration du stockage multer
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, UPLOAD_DIR);
+    },
+    filename: (req, file, cb) => {
+        const extension = path.extname(file.originalname);
+        const fileName = `formateur_${uuidv4()}${extension}`;
+        cb(null, fileName);
+    }
+});
+
+// Filtre pour accepter uniquement les images
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Format non supporté. Utilisez JPG, PNG, WEBP ou GIF'), false);
+    }
+};
+
+// Configuration multer
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB
+    },
+    fileFilter: fileFilter
+});
+
+// Middleware multer pour l'upload de la photo
+const uploadFormateurPhotoMiddleware = upload.single('photo');
+
 // ============================================================
-// FONCTION UTILITAIRE : Upload de la photo
+// FONCTION : Upload de la photo (avec multer)
 // ============================================================
 const uploadFormateurPhoto = async (req, res) => {
     try {
-        if (!req.files || !req.files.photo) {
-            return res.status(400).json({
-                success: false,
-                message: 'Aucune photo envoyée'
+        // Utiliser le middleware multer
+        uploadFormateurPhotoMiddleware(req, res, function(err) {
+            if (err) {
+                console.error('❌ Erreur multer:', err);
+                
+                if (err instanceof multer.MulterError) {
+                    if (err.code === 'FILE_TOO_LARGE') {
+                        return res.status(413).json({
+                            success: false,
+                            message: 'La photo ne doit pas dépasser 5MB'
+                        });
+                    }
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Erreur d\'upload: ' + err.message
+                    });
+                }
+                
+                return res.status(400).json({
+                    success: false,
+                    message: err.message || 'Erreur lors de l\'upload'
+                });
+            }
+
+            // Vérifier si un fichier a été reçu
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Aucune photo envoyée'
+                });
+            }
+
+            console.log(`✅ Photo formateur uploadée: ${req.file.filename}`);
+
+            res.status(200).json({
+                success: true,
+                message: 'Photo uploadée avec succès',
+                fileName: req.file.filename,
+                filePath: `/uploads/formateurs/${req.file.filename}`
             });
-        }
-
-        const photo = req.files.photo;
-        const maxSize = 5 * 1024 * 1024; // 5MB
-
-        // Vérifier la taille
-        if (photo.size > maxSize) {
-            return res.status(400).json({
-                success: false,
-                message: 'La photo ne doit pas dépasser 5MB'
-            });
-        }
-
-        // Vérifier le type
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-        if (!allowedTypes.includes(photo.mimetype)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Format non supporté. Utilisez JPG, PNG, WEBP ou GIF'
-            });
-        }
-
-        // Générer un nom unique
-        const extension = path.extname(photo.name);
-        const fileName = `formateur_${uuidv4()}${extension}`;
-        const filePath = path.join(UPLOAD_DIR, fileName);
-
-        // Déplacer le fichier
-        await photo.mv(filePath);
-
-        console.log(`✅ Photo formateur uploadée: ${fileName}`);
-
-        res.status(200).json({
-            success: true,
-            message: 'Photo uploadée avec succès',
-            fileName: fileName,
-            filePath: `/uploads/formateurs/${fileName}`
         });
-
     } catch (error) {
         console.error('❌ Erreur upload photo formateur:', error);
         res.status(500).json({

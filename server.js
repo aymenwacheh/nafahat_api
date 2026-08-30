@@ -4,7 +4,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
-const fileUpload = require('express-fileupload');
 
 console.log('🚀 Démarrage du serveur Nafahat API...');
 console.log('📂 Chargement des modules...');
@@ -36,22 +35,10 @@ console.log('   ✅ JSON parser activé (limite 10MB)');
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 console.log('   ✅ URL-encoded parser activé (limite 10MB)');
 
-// =============================================
-// FILE UPLOAD MIDDLEWARE (CRUCIAL POUR LES PHOTOS)
-// =============================================
-app.use(fileUpload({
-    useTempFiles: true,
-    tempFileDir: '/tmp/',
-    debug: process.env.NODE_ENV === 'development',
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
-    abortOnLimit: true,
-    createParentPath: true,
-    safeFileNames: true,
-    preserveExtension: true,
-    parseNested: true,
-    uriDecodeFileNames: true
-}));
-console.log('   ✅ File upload middleware activé (max 10MB)');
+// ⚠️ SUPPRESSION DE express-fileupload
+// Il cause un conflit avec multer dans uploadImage.js
+// Les uploads sont gérés par multer dans les routes dédiées
+console.log('   ✅ Upload géré par multer (dans les routes)');
 
 // =============================================
 // CRÉATION DES DOSSIERS UPLOADS
@@ -182,13 +169,9 @@ const paiementValidationRoutes = loadRoute('./routes/paiementValidationRoutes', 
 const logMiddleware = (routeName) => (req, res, next) => {
     console.log(`📥 [${routeName}] ${req.method} ${req.url}`);
     
-    // Log des fichiers uploadés
-    if (req.files && Object.keys(req.files).length > 0) {
-        const fileNames = Object.keys(req.files).map(key => {
-            const file = req.files[key];
-            return `${key}(${file.name}, ${(file.size / 1024).toFixed(1)}KB)`;
-        });
-        console.log(`   📎 Fichiers reçus: ${fileNames.join(', ')}`);
+    // Log des fichiers uploadés (multer les met dans req.file)
+    if (req.file) {
+        console.log(`   📎 Fichier reçu: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)}KB)`);
     }
     
     // Log du body (sans les données sensibles)
@@ -224,15 +207,22 @@ app.get('/api/test', (req, res) => {
             enabled: true,
             maxSize: '10MB',
             supportedTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
-            endpoint: '/api/formateurs/upload'
+            endpoints: [
+                '/api/upload/image',
+                '/api/upload/image-auto',
+                '/api/upload/simple'
+            ]
         },
         routes: [
+            '/api/test',
             '/api/formations',
             '/api/formateurs',
             '/api/formateurs/upload ⭐',
             '/api/categories',
             '/api/upload',
             '/api/upload/image',
+            '/api/upload/image-auto',
+            '/api/upload/simple',
             '/api/videos',
             '/api/durees',
             '/api/duree',
@@ -259,12 +249,26 @@ const registerRoute = (route, path, name) => {
     }
 };
 
-// Enregistrement de toutes les routes
+// =============================================
+// ENREGISTREMENT DES ROUTES D'UPLOAD
+// =============================================
+
+// ✅ Route principale d'upload d'images (formations) - utilise multer
+registerRoute(uploadImageRoutes, '/api/upload', 'uploadImage');
+
+// ✅ Route alternative pour compatibilité (upload simple) - utilise multer
+if (uploadRoutes) {
+    app.use('/api/upload/simple', logMiddleware('upload'), uploadRoutes);
+    console.log('   ✅ /api/upload/simple enregistré (compatibilité)');
+}
+
+// =============================================
+// ENREGISTREMENT DES AUTRES ROUTES
+// =============================================
+
 registerRoute(formationRoutes, '/api/formations', 'formations');
 registerRoute(formateurRoutes, '/api/formateurs', 'formateurs');
 registerRoute(categorieRoutes, '/api/categories', 'categories');
-registerRoute(uploadRoutes, '/api/upload', 'upload');
-registerRoute(uploadImageRoutes, '/api/upload/image', 'uploadImage');
 registerRoute(videosRoutes, '/api/videos', 'videos');
 
 // Route /api/durees (avec 's')
@@ -301,7 +305,12 @@ app.get('/', (req, res) => {
         upload: {
             enabled: true,
             maxSize: '10MB',
-            supportedFormats: ['JPG', 'PNG', 'WEBP', 'GIF']
+            supportedFormats: ['JPG', 'PNG', 'WEBP', 'GIF'],
+            endpoints: {
+                formations: '/api/upload/image',
+                formationsAuto: '/api/upload/image-auto',
+                formateurs: '/api/formateurs/upload'
+            }
         },
         documentation: '/api/test'
     });
@@ -323,6 +332,8 @@ app.use((req, res) => {
             '/api/categories',
             '/api/upload',
             '/api/upload/image',
+            '/api/upload/image-auto',
+            '/api/upload/simple',
             '/api/videos',
             '/api/durees',
             '/api/duree',
@@ -360,6 +371,21 @@ app.use((err, req, res, next) => {
         });
     }
     
+    // Erreur multer
+    if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({
+            success: false,
+            message: 'Fichier trop volumineux (max 10MB)'
+        });
+    }
+    
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({
+            success: false,
+            message: 'Champ de fichier inattendu. Utilisez "image" comme nom de champ.'
+        });
+    }
+    
     res.status(500).json({ 
         success: false, 
         message: 'Erreur interne du serveur',
@@ -374,10 +400,12 @@ console.log('\n📋 RÉSUMÉ DES ROUTES DISPONIBLES:');
 console.log('   ✅ /api/test');
 console.log('   ✅ /api/formations');
 console.log('   ✅ /api/formateurs');
-console.log('   ✅ /api/formateurs/upload ⭐ (UPLOAD PHOTOS)');
+console.log('   ✅ /api/formateurs/upload ⭐ (UPLOAD PHOTOS FORMATEURS)');
 console.log('   ✅ /api/categories');
 console.log('   ✅ /api/upload');
-console.log('   ✅ /api/upload/image');
+console.log('   ✅ /api/upload/image (UPLOAD IMAGES FORMATIONS)');
+console.log('   ✅ /api/upload/image-auto (UPLOAD IMAGES FORMATIONS - AUTO)');
+console.log('   ✅ /api/upload/simple');
 console.log('   ✅ /api/videos');
 console.log('   ✅ /api/durees (AVEC "s")');
 console.log('   ✅ /api/duree (SANS "s") - REDIRECTION');
@@ -402,28 +430,33 @@ console.log('   Méthode: POST');
 console.log('   Champ: photo');
 console.log('   Formats: JPG, PNG, WEBP, GIF');
 console.log('   Taille max: 5MB (configuré dans le contrôleur)');
-console.log('   Taille max globale: 10MB (configuré dans server.js)');
+
+console.log('\n📸 UPLOAD IMAGES FORMATIONS:');
+console.log(`   URL: http://localhost:${PORT}/api/upload/image`);
+console.log(`   URL alternative: http://localhost:${PORT}/api/upload/image-auto`);
+console.log('   Méthode: POST');
+console.log('   Champ: image');
+console.log('   Formats: JPG, PNG, WEBP, GIF');
+console.log('   Taille max: 10MB');
 
 console.log('\n📝 TEST AVEC CURL:');
+console.log('   # Upload image formation:');
+console.log(`   curl -X POST http://localhost:${PORT}/api/upload/image \\`);
+console.log('        -F "image=@/chemin/vers/image.jpg"');
+console.log('');
+console.log('   # Upload photo formateur:');
 console.log(`   curl -X POST http://localhost:${PORT}/api/formateurs/upload \\`);
 console.log('        -F "photo=@/chemin/vers/photo.jpg"');
-console.log('');
-console.log('   Réponse attendue:');
-console.log('   {');
-console.log('     "success": true,');
-console.log('     "message": "Photo uploadée avec succès",');
-console.log('     "fileName": "formateur_uuid.jpg",');
-console.log('     "filePath": "/uploads/formateurs/formateur_uuid.jpg"');
-console.log('   }');
 
 console.log('\n🔍 TEST AVEC FLUTTER:');
 console.log('   Vérifiez que votre URL est:');
-console.log(`   ${isProduction ? 'https://www.nafahat-academy.com' : 'http://localhost:3000'}/api/formateurs/upload`);
+console.log(`   ${isProduction ? 'https://www.nafahat-academy.com' : 'http://localhost:3000'}/api/upload/image`);
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
 app.listen(PORT, () => {
     console.log(`\n✅ Serveur démarré sur http://localhost:${PORT}`);
     console.log(`📋 Testez l'API: http://localhost:${PORT}/api/test`);
+    console.log(`📸 Upload formation: http://localhost:${PORT}/api/upload/image`);
     console.log(`📸 Upload formateur: http://localhost:${PORT}/api/formateurs/upload`);
     console.log('\n💡 IMPORTANT:');
     console.log('   - Les images de formations sont stockées dans uploads/formations/');
