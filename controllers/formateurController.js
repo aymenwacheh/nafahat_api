@@ -1,7 +1,81 @@
 // nafahat_api/controllers/formateurController.js
 const db = require('../config/database');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 
-// Récupérer tous les formateurs
+// ============================================================
+// CONSTANTES - DOSSIER D'UPLOAD
+// ============================================================
+const UPLOAD_DIR = path.join(__dirname, '../uploads/formateurs');
+
+// S'assurer que le dossier existe
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    console.log('   📁 Dossier "uploads/formateurs" créé');
+}
+
+// ============================================================
+// FONCTION UTILITAIRE : Upload de la photo
+// ============================================================
+const uploadFormateurPhoto = async (req, res) => {
+    try {
+        if (!req.files || !req.files.photo) {
+            return res.status(400).json({
+                success: false,
+                message: 'Aucune photo envoyée'
+            });
+        }
+
+        const photo = req.files.photo;
+        const maxSize = 5 * 1024 * 1024; // 5MB
+
+        // Vérifier la taille
+        if (photo.size > maxSize) {
+            return res.status(400).json({
+                success: false,
+                message: 'La photo ne doit pas dépasser 5MB'
+            });
+        }
+
+        // Vérifier le type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(photo.mimetype)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Format non supporté. Utilisez JPG, PNG, WEBP ou GIF'
+            });
+        }
+
+        // Générer un nom unique
+        const extension = path.extname(photo.name);
+        const fileName = `formateur_${uuidv4()}${extension}`;
+        const filePath = path.join(UPLOAD_DIR, fileName);
+
+        // Déplacer le fichier
+        await photo.mv(filePath);
+
+        console.log(`✅ Photo formateur uploadée: ${fileName}`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Photo uploadée avec succès',
+            fileName: fileName,
+            filePath: `/uploads/formateurs/${fileName}`
+        });
+
+    } catch (error) {
+        console.error('❌ Erreur upload photo formateur:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de l\'upload: ' + error.message
+        });
+    }
+};
+
+// ============================================================
+// RÉCUPÉRER TOUS LES FORMATEURS
+// ============================================================
 const getAllFormateurs = async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -17,7 +91,9 @@ const getAllFormateurs = async (req, res) => {
     }
 };
 
-// Récupérer un formateur par ID
+// ============================================================
+// RÉCUPÉRER UN FORMATEUR PAR ID
+// ============================================================
 const getFormateurById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -39,7 +115,9 @@ const getFormateurById = async (req, res) => {
     }
 };
 
-// Créer un formateur
+// ============================================================
+// CRÉER UN FORMATEUR
+// ============================================================
 const createFormateur = async (req, res) => {
     try {
         const {
@@ -78,7 +156,9 @@ const createFormateur = async (req, res) => {
     }
 };
 
-// Mettre à jour un formateur
+// ============================================================
+// METTRE À JOUR UN FORMATEUR
+// ============================================================
 const updateFormateur = async (req, res) => {
     try {
         const { id } = req.params;
@@ -97,7 +177,9 @@ const updateFormateur = async (req, res) => {
     }
 };
 
-// Supprimer un formateur
+// ============================================================
+// SUPPRIMER UN FORMATEUR
+// ============================================================
 const deleteFormateur = async (req, res) => {
     try {
         const { id } = req.params;
@@ -115,10 +197,25 @@ const deleteFormateur = async (req, res) => {
             });
         }
 
+        // Récupérer le nom de la photo avant suppression
+        const [formateur] = await db.query(
+            'SELECT photo FROM formateur WHERE id = ?',
+            [id]
+        );
+
         const [result] = await db.query('DELETE FROM formateur WHERE id = ?', [id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ success: false, message: 'Formateur non trouvé' });
+        }
+
+        // Supprimer la photo si elle existe
+        if (formateur.length > 0 && formateur[0].photo) {
+            const photoPath = path.join(UPLOAD_DIR, formateur[0].photo);
+            if (fs.existsSync(photoPath)) {
+                fs.unlinkSync(photoPath);
+                console.log(`🗑️ Photo supprimée: ${formateur[0].photo}`);
+            }
         }
 
         res.json({ success: true, message: 'Formateur supprimé avec succès' });
@@ -128,7 +225,11 @@ const deleteFormateur = async (req, res) => {
     }
 };
 
+// ============================================================
+// EXPORTATION
+// ============================================================
 module.exports = {
+    uploadFormateurPhoto,
     getAllFormateurs,
     getFormateurById,
     createFormateur,

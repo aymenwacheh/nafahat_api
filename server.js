@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
+const fileUpload = require('express-fileupload');
 
 console.log('🚀 Démarrage du serveur Nafahat API...');
 console.log('📂 Chargement des modules...');
@@ -13,97 +14,130 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// =============================================
+// MIDDLEWARES
+// =============================================
 console.log('⚙️  Configuration des middlewares...');
 
-// Middleware
-app.use(cors());
+// CORS
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true
+}));
 console.log('   ✅ CORS activé');
 
-app.use(express.json());
-console.log('   ✅ JSON parser activé');
+// JSON Parser avec limite augmentée
+app.use(express.json({ limit: '10mb' }));
+console.log('   ✅ JSON parser activé (limite 10MB)');
 
-app.use(express.urlencoded({ extended: true }));
-console.log('   ✅ URL-encoded parser activé');
+// URL-encoded Parser avec limite augmentée
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+console.log('   ✅ URL-encoded parser activé (limite 10MB)');
+
+// =============================================
+// FILE UPLOAD MIDDLEWARE (CRUCIAL POUR LES PHOTOS)
+// =============================================
+app.use(fileUpload({
+    useTempFiles: true,
+    tempFileDir: '/tmp/',
+    debug: process.env.NODE_ENV === 'development',
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+    abortOnLimit: true,
+    createParentPath: true,
+    safeFileNames: true,
+    preserveExtension: true,
+    parseNested: true,
+    uriDecodeFileNames: true
+}));
+console.log('   ✅ File upload middleware activé (max 10MB)');
 
 // =============================================
 // CRÉATION DES DOSSIERS UPLOADS
 // =============================================
+console.log('📁 Création des dossiers uploads...');
+
 const uploadsDir = path.join(__dirname, 'uploads');
 const formationsDir = path.join(uploadsDir, 'formations');
 const quittancesDir = path.join(uploadsDir, 'quittances');
+const formateursDir = path.join(uploadsDir, 'formateurs');
 
-// Créer les dossiers s'ils n'existent pas
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    console.log('   📁 Dossier "uploads" créé');
-}
+// Fonction utilitaire pour créer les dossiers
+const createDirectory = (dirPath, name) => {
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+        console.log(`   📁 Dossier "${name}" créé`);
+        return true;
+    }
+    return false;
+};
 
-if (!fs.existsSync(formationsDir)) {
-    fs.mkdirSync(formationsDir, { recursive: true });
-    console.log('   📁 Dossier "uploads/formations" créé');
-}
-
-if (!fs.existsSync(quittancesDir)) {
-    fs.mkdirSync(quittancesDir, { recursive: true });
-    console.log('   📁 Dossier "uploads/quittances" créé');
-}
-
-// Servir les fichiers statiques
-app.use('/uploads', express.static(uploadsDir));
-console.log('   ✅ Uploads statiques activés sur /uploads');
+createDirectory(uploadsDir, 'uploads');
+createDirectory(formationsDir, 'uploads/formations');
+createDirectory(quittancesDir, 'uploads/quittances');
+createDirectory(formateursDir, 'uploads/formateurs');
 
 // =============================================
-// ✅ CONFIGURATION UNIQUE POUR LOCAL ET PRODUCTION
+// SERVIRE LES FICHIERS STATIQUES
+// =============================================
+console.log('📁 Configuration des fichiers statiques...');
+
+// Routes statiques principales
+app.use('/uploads', express.static(uploadsDir));
+console.log('   ✅ /uploads activé');
+
+// =============================================
+// CONFIGURATION ENVIRONNEMENT
 // =============================================
 const isProduction = process.env.NODE_ENV === 'production' || 
                      process.env.HOSTNAME === 'www.nafahat-academy.com' ||
                      process.env.BASE_URL === 'http://www.nafahat-academy.com';
 
-console.log(`   🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
+console.log(`   🌍 Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
 
-// 🔥 Chemins statiques
-app.use('/nafahat_api/uploads', express.static(uploadsDir));
-console.log('   ✅ /nafahat_api/uploads activé');
+// Routes statiques pour la production
+const staticRoutes = [
+    { path: '/nafahat_api/uploads', dir: uploadsDir },
+    { path: '/nafahat_api/uploads/formations', dir: formationsDir },
+    { path: '/nafahat_api/uploads/quittances', dir: quittancesDir },
+    { path: '/nafahat_api/uploads/formateurs', dir: formateursDir }
+];
 
-app.use('/nafahat_api/uploads/formations', express.static(formationsDir));
-console.log('   ✅ /nafahat_api/uploads/formations activé');
+staticRoutes.forEach(({ path: routePath, dir }) => {
+    app.use(routePath, express.static(dir));
+    console.log(`   ✅ ${routePath} activé`);
+});
 
-app.use('/nafahat_api/uploads/quittances', express.static(quittancesDir));
-console.log('   ✅ /nafahat_api/uploads/quittances activé');
-
-// 🔥 Route directe pour les images
-app.get('/nafahat_api/uploads/formations/:filename', (req, res) => {
-    const filePath = path.join(formationsDir, req.params.filename);
-    if (fs.existsSync(filePath)) {
-        res.sendFile(filePath);
-    } else {
-        if (isProduction) {
-            const altPath = path.join('/var/www/nafahat_api/uploads/formations', req.params.filename);
+// =============================================
+// ROUTES DIRECTES POUR LES FICHIERS
+// =============================================
+const serveFile = (dir, altDir, type, typeName) => {
+    app.get(`/nafahat_api/uploads/${type}/:filename`, (req, res) => {
+        const filePath = path.join(dir, req.params.filename);
+        
+        if (fs.existsSync(filePath)) {
+            return res.sendFile(filePath);
+        }
+        
+        if (isProduction && altDir) {
+            const altPath = path.join(altDir, req.params.filename);
             if (fs.existsSync(altPath)) {
                 return res.sendFile(altPath);
             }
         }
-        res.status(404).json({ success: false, message: 'Image non trouvée' });
-    }
-});
-console.log('   ✅ Route directe pour les images activée');
+        
+        res.status(404).json({ 
+            success: false, 
+            message: `${typeName} non trouvée` 
+        });
+    });
+    console.log(`   ✅ Route directe pour les ${typeName} activée`);
+};
 
-// 🔥 Route directe pour les quittances
-app.get('/nafahat_api/uploads/quittances/:filename', (req, res) => {
-    const filePath = path.join(quittancesDir, req.params.filename);
-    if (fs.existsSync(filePath)) {
-        res.sendFile(filePath);
-    } else {
-        if (isProduction) {
-            const altPath = path.join('/var/www/nafahat_api/uploads/quittances', req.params.filename);
-            if (fs.existsSync(altPath)) {
-                return res.sendFile(altPath);
-            }
-        }
-        res.status(404).json({ success: false, message: 'Quittance non trouvée' });
-    }
-});
-console.log('   ✅ Route directe pour les quittances activée');
+serveFile(formationsDir, '/var/www/nafahat_api/uploads/formations', 'formations', 'images de formations');
+serveFile(quittancesDir, '/var/www/nafahat_api/uploads/quittances', 'quittances', 'quittances');
+serveFile(formateursDir, '/var/www/nafahat_api/uploads/formateurs', 'formateurs', 'photos des formateurs');
 
 console.log('✅ Middlewares configurés avec succès');
 
@@ -112,154 +146,69 @@ console.log('✅ Middlewares configurés avec succès');
 // =============================================
 console.log('📌 Import des routes...');
 
-// Déclaration des variables
-let formationRoutes;
-let formateurRoutes;
-let categorieRoutes;
-let uploadRoutes;
-let uploadImageRoutes;
-let videosRoutes;
-let dureeRoutes;
-let typeFormationRoutes;
-let adherentRoutes;
-let adminRoutes; // ✅ NOUVEAU
-let chatbotRoutes;
-let cibleRoutes;
-let paymentRoutes;
-let aboutRoutes;
-let cmplUserRoutes;
-let paiementValidationRoutes;
+// Fonction utilitaire pour charger les routes
+const loadRoute = (routePath, routeName) => {
+    try {
+        const route = require(routePath);
+        console.log(`   ✅ Route ${routeName} chargée`);
+        return route;
+    } catch (error) {
+        console.error(`   ❌ Erreur chargement ${routeName}:`, error.message);
+        return null;
+    }
+};
 
-// Formation
-try {
-    formationRoutes = require('./routes/formations');
-    console.log('   ✅ Route formations chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement formations:', error.message);
-}
-
-// Formateurs
-try {
-    formateurRoutes = require('./routes/formateurs');
-    console.log('   ✅ Route formateurs chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement formateurs:', error.message);
-}
-
-// Catégories
-try {
-    categorieRoutes = require('./routes/categories');
-    console.log('   ✅ Route categories chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement categories:', error.message);
-}
-
-// Upload
-try {
-    uploadRoutes = require('./routes/upload');
-    console.log('   ✅ Route upload chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement upload:', error.message);
-}
-
-// Upload Image
-try {
-    uploadImageRoutes = require('./routes/uploadImage');
-    console.log('   ✅ Route uploadImage chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement uploadImage:', error.message);
-}
-
-// Vidéos
-try {
-    videosRoutes = require('./routes/videos');
-    console.log('   ✅ Route videos chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement videos:', error.message);
-}
-
-// Durée
-try {
-    dureeRoutes = require('./routes/duree');
-    console.log('   ✅ Route duree chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement duree:', error.message);
-}
-
-// Type Formation
-try {
-    typeFormationRoutes = require('./routes/typeFormation');
-    console.log('   ✅ Route typeFormation chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement typeFormation:', error.message);
-}
-
-// Adhérents
-try {
-    adherentRoutes = require('./routes/adherentRoutes');
-    console.log('   ✅ Route adherentRoutes chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement adherentRoutes:', error.message);
-}
-
-// ✅ NOUVEAU: Admin Routes
-try {
-    adminRoutes = require('./routes/adminRoutes');
-    console.log('   ✅ Route adminRoutes chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement adminRoutes:', error.message);
-}
-
-// Chatbot
-try {
-    chatbotRoutes = require('./routes/chatbot');
-    console.log('   ✅ Route chatbot chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement chatbot:', error.message);
-}
-
-// Cibles
-try {
-    cibleRoutes = require('./routes/cibles');
-    console.log('   ✅ Route cibles chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement cibles:', error.message);
-}
-
-// Paiements
-try {
-    paymentRoutes = require('./routes/paymentRoutes');
-    console.log('   ✅ Route paymentRoutes chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement paymentRoutes:', error.message);
-}
-
-// About
-try {
-    aboutRoutes = require('./routes/aboutRoutes');
-    console.log('   ✅ Route aboutRoutes chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement aboutRoutes:', error.message);
-}
-
-// CmplUser
-try {
-    cmplUserRoutes = require('./routes/cmplUserRoutes');
-    console.log('   ✅ Route cmplUserRoutes chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement cmplUserRoutes:', error.message);
-}
-
-// Paiement Validation
-try {
-    paiementValidationRoutes = require('./routes/paiementValidationRoutes');
-    console.log('   ✅ Route paiementValidationRoutes chargée');
-} catch (error) {
-    console.error('   ❌ Erreur chargement paiementValidationRoutes:', error.message);
-}
+// Chargement de toutes les routes
+const formationRoutes = loadRoute('./routes/formations', 'formations');
+const formateurRoutes = loadRoute('./routes/formateurs', 'formateurs');
+const categorieRoutes = loadRoute('./routes/categories', 'categories');
+const uploadRoutes = loadRoute('./routes/upload', 'upload');
+const uploadImageRoutes = loadRoute('./routes/uploadImage', 'uploadImage');
+const videosRoutes = loadRoute('./routes/videos', 'videos');
+const dureeRoutes = loadRoute('./routes/duree', 'duree');
+const typeFormationRoutes = loadRoute('./routes/typeFormation', 'typeFormation');
+const adherentRoutes = loadRoute('./routes/adherentRoutes', 'adherentRoutes');
+const adminRoutes = loadRoute('./routes/adminRoutes', 'adminRoutes');
+const chatbotRoutes = loadRoute('./routes/chatbot', 'chatbot');
+const cibleRoutes = loadRoute('./routes/cibles', 'cibles');
+const paymentRoutes = loadRoute('./routes/paymentRoutes', 'paymentRoutes');
+const aboutRoutes = loadRoute('./routes/aboutRoutes', 'aboutRoutes');
+const cmplUserRoutes = loadRoute('./routes/cmplUserRoutes', 'cmplUserRoutes');
+const paiementValidationRoutes = loadRoute('./routes/paiementValidationRoutes', 'paiementValidationRoutes');
 
 // =============================================
-// UTILISATION DES ROUTES
+// MIDDLEWARE DE LOG POUR LES ROUTES
+// =============================================
+const logMiddleware = (routeName) => (req, res, next) => {
+    console.log(`📥 [${routeName}] ${req.method} ${req.url}`);
+    
+    // Log des fichiers uploadés
+    if (req.files && Object.keys(req.files).length > 0) {
+        const fileNames = Object.keys(req.files).map(key => {
+            const file = req.files[key];
+            return `${key}(${file.name}, ${(file.size / 1024).toFixed(1)}KB)`;
+        });
+        console.log(`   📎 Fichiers reçus: ${fileNames.join(', ')}`);
+    }
+    
+    // Log du body (sans les données sensibles)
+    if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+        const logBody = { ...req.body };
+        if (logBody.password) logBody.password = '***';
+        if (logBody.token) logBody.token = '***';
+        const bodyStr = JSON.stringify(logBody);
+        if (bodyStr.length > 300) {
+            console.log(`   📋 Body: ${bodyStr.substring(0, 300)}...`);
+        } else {
+            console.log(`   📋 Body: ${bodyStr}`);
+        }
+    }
+    
+    next();
+};
+
+// =============================================
+// ENREGISTREMENT DES ROUTES
 // =============================================
 console.log('\n📌 Enregistrement des routes...');
 
@@ -271,9 +220,16 @@ app.get('/api/test', (req, res) => {
         message: 'API fonctionne !',
         timestamp: new Date().toISOString(),
         environment: isProduction ? 'PRODUCTION' : 'DEVELOPPEMENT',
+        upload: {
+            enabled: true,
+            maxSize: '10MB',
+            supportedTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+            endpoint: '/api/formateurs/upload'
+        },
         routes: [
             '/api/formations',
             '/api/formateurs',
+            '/api/formateurs/upload ⭐',
             '/api/categories',
             '/api/upload',
             '/api/upload/image',
@@ -282,239 +238,56 @@ app.get('/api/test', (req, res) => {
             '/api/duree',
             '/api/types-formation',
             '/api/adherents',
-            '/api/admin', // ✅ NOUVEAU
+            '/api/admin',
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
-            '/api/about',
-            '/api/adherents/:id/formations/:fid/*',
-            '/api/admin/paiement-validation'
+            '/api/about'
         ]
     });
 });
 
-// Formation routes
-if (formationRoutes) {
-    app.use('/api/formations', (req, res, next) => {
-        console.log(`📥 [formations] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, formationRoutes);
-    console.log('   ✅ /api/formations enregistré');
-} else {
-    console.log('   ⚠️ /api/formations non enregistré (route manquante)');
-}
+// Fonction pour enregistrer une route avec logs
+const registerRoute = (route, path, name) => {
+    if (route) {
+        app.use(path, logMiddleware(name), route);
+        console.log(`   ✅ ${path} enregistré`);
+        return true;
+    } else {
+        console.log(`   ⚠️ ${path} non enregistré (route manquante)`);
+        return false;
+    }
+};
 
-// Formateur routes
-if (formateurRoutes) {
-    app.use('/api/formateurs', (req, res, next) => {
-        console.log(`📥 [formateurs] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, formateurRoutes);
-    console.log('   ✅ /api/formateurs enregistré');
-} else {
-    console.log('   ⚠️ /api/formateurs non enregistré (route manquante)');
-}
+// Enregistrement de toutes les routes
+registerRoute(formationRoutes, '/api/formations', 'formations');
+registerRoute(formateurRoutes, '/api/formateurs', 'formateurs');
+registerRoute(categorieRoutes, '/api/categories', 'categories');
+registerRoute(uploadRoutes, '/api/upload', 'upload');
+registerRoute(uploadImageRoutes, '/api/upload/image', 'uploadImage');
+registerRoute(videosRoutes, '/api/videos', 'videos');
 
-// Categories routes
-if (categorieRoutes) {
-    app.use('/api/categories', (req, res, next) => {
-        console.log(`📥 [categories] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, categorieRoutes);
-    console.log('   ✅ /api/categories enregistré');
-} else {
-    console.log('   ⚠️ /api/categories non enregistré (route manquante)');
-}
+// Route /api/durees (avec 's')
+registerRoute(dureeRoutes, '/api/durees', 'durees');
 
-// Upload routes
-if (uploadRoutes) {
-    app.use('/api/upload', (req, res, next) => {
-        console.log(`📥 [upload] ${req.method} ${req.url}`);
-        next();
-    }, uploadRoutes);
-    console.log('   ✅ /api/upload enregistré');
-} else {
-    console.log('   ⚠️ /api/upload non enregistré (route manquante)');
-}
-
-// Upload Image routes
-if (uploadImageRoutes) {
-    app.use('/api/upload', (req, res, next) => {
-        console.log(`📥 [uploadImage] ${req.method} ${req.url}`);
-        next();
-    }, uploadImageRoutes);
-    console.log('   ✅ /api/upload/image enregistré');
-} else {
-    console.log('   ⚠️ /api/upload/image non enregistré (route manquante)');
-}
-
-// Videos routes
-if (videosRoutes) {
-    app.use('/api/videos', (req, res, next) => {
-        console.log(`📥 [videos] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, videosRoutes);
-    console.log('   ✅ /api/videos enregistré');
-} else {
-    console.log('   ⚠️ /api/videos non enregistré (route manquante)');
-}
-
-// Duree routes
+// Route /api/duree (sans 's') avec redirection
 if (dureeRoutes) {
-    app.use('/api/durees', (req, res, next) => {
-        console.log(`📥 [durees] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, dureeRoutes);
-    console.log('   ✅ /api/durees enregistré (AVEC "s")');
-
-    app.use('/api/duree', (req, res, next) => {
-        console.log(`📥 [duree] ${req.method} ${req.url}`);
-        console.log(`   🔄 Redirection vers /api/durees (compatible frontend)`);
+    app.use('/api/duree', logMiddleware('duree'), (req, res, next) => {
         req.url = req.url.replace('/api/duree', '/api/durees');
         next();
     }, dureeRoutes);
-    console.log('   ✅ /api/duree enregistré (SANS "s") - REDIRECTION');
-} else {
-    console.log('   ⚠️ /api/duree non enregistré (route manquante)');
+    console.log('   ✅ /api/duree enregistré (REDIRECTION vers /api/durees)');
 }
 
-// Type Formation routes
-if (typeFormationRoutes) {
-    app.use('/api/types-formation', (req, res, next) => {
-        console.log(`📥 [types-formation] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, typeFormationRoutes);
-    console.log('   ✅ /api/types-formation enregistré');
-} else {
-    console.log('   ⚠️ /api/types-formation non enregistré (route manquante)');
-}
-
-// Adherent routes
-if (adherentRoutes) {
-    app.use('/api/adherents', (req, res, next) => {
-        console.log(`📥 [adherents] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, adherentRoutes);
-    console.log('   ✅ /api/adherents enregistré');
-} else {
-    console.log('   ⚠️ /api/adherents non enregistré (route manquante)');
-}
-
-// ✅ NOUVEAU: Admin routes - Gestion des utilisateurs
-if (adminRoutes) {
-    app.use('/api/admin', (req, res, next) => {
-        console.log(`📥 [admin] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, adminRoutes);
-    console.log('   ✅ /api/admin enregistré');
-} else {
-    console.log('   ⚠️ /api/admin non enregistré (route manquante)');
-}
-
-// CmplUser routes
-if (cmplUserRoutes) {
-    app.use('/api/adherents', (req, res, next) => {
-        console.log(`📥 [cmplUser] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, cmplUserRoutes);
-    console.log('   ✅ /api/adherents/:id/formations/:fid/* enregistré (CmplUser)');
-} else {
-    console.log('   ⚠️ Routes CmplUser non enregistrées (route manquante)');
-}
-
-// Chatbot routes
-if (chatbotRoutes) {
-    app.use('/api/chatbot', (req, res, next) => {
-        console.log(`📥 [chatbot] ${req.method} ${req.url}`);
-        next();
-    }, chatbotRoutes);
-    console.log('   ✅ /api/chatbot enregistré');
-} else {
-    console.log('   ⚠️ /api/chatbot non enregistré (route manquante)');
-}
-
-// Cibles routes
-if (cibleRoutes) {
-    app.use('/api/cibles', (req, res, next) => {
-        console.log(`📥 [cibles] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, cibleRoutes);
-    console.log('   ✅ /api/cibles enregistré');
-} else {
-    console.log('   ⚠️ /api/cibles non enregistré (route manquante)');
-}
-
-// Payment routes
-if (paymentRoutes) {
-    app.use('/api/payments', (req, res, next) => {
-        console.log(`📥 [payments] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, paymentRoutes);
-    console.log('   ✅ /api/payments enregistré');
-} else {
-    console.log('   ⚠️ /api/payments non enregistré (route manquante)');
-}
-
-// About routes
-if (aboutRoutes) {
-    app.use('/api/about', (req, res, next) => {
-        console.log(`📥 [about] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, aboutRoutes);
-    console.log('   ✅ /api/about enregistré');
-} else {
-    console.log('   ⚠️ /api/about non enregistré (route manquante)');
-}
-
-// Paiement Validation routes
-if (paiementValidationRoutes) {
-    app.use('/api/admin/paiement-validation', (req, res, next) => {
-        console.log(`📥 [paiement-validation] ${req.method} ${req.url}`);
-        if (req.method === 'POST' || req.method === 'PUT') {
-            console.log(`   📋 Body: ${JSON.stringify(req.body).substring(0, 200)}...`);
-        }
-        next();
-    }, paiementValidationRoutes);
-    console.log('   ✅ /api/admin/paiement-validation enregistré');
-} else {
-    console.log('   ⚠️ /api/admin/paiement-validation non enregistré (route manquante)');
-}
+registerRoute(typeFormationRoutes, '/api/types-formation', 'types-formation');
+registerRoute(adherentRoutes, '/api/adherents', 'adherents');
+registerRoute(adminRoutes, '/api/admin', 'admin');
+registerRoute(chatbotRoutes, '/api/chatbot', 'chatbot');
+registerRoute(cibleRoutes, '/api/cibles', 'cibles');
+registerRoute(paymentRoutes, '/api/payments', 'payments');
+registerRoute(aboutRoutes, '/api/about', 'about');
+registerRoute(cmplUserRoutes, '/api/adherents', 'cmplUser');
+registerRoute(paiementValidationRoutes, '/api/admin/paiement-validation', 'paiement-validation');
 
 // =============================================
 // ROUTE D'ACCUEIL
@@ -525,36 +298,12 @@ app.get('/', (req, res) => {
         message: 'Bienvenue sur l\'API Nafahat',
         version: '1.0.0',
         environment: isProduction ? 'PRODUCTION' : 'DEVELOPPEMENT',
-        endpoints: [
-            { method: 'GET', path: '/api/test', description: 'Test de l\'API' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/formations', description: 'Gestion des formations' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/formateurs', description: 'Gestion des formateurs' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/categories', description: 'Gestion des catégories' },
-            { method: 'POST', path: '/api/upload', description: 'Upload d\'images (ancien)' },
-            { method: 'POST', path: '/api/upload/image', description: 'Upload d\'images (nouveau)' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/videos', description: 'Gestion des vidéos' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/durees', description: 'Gestion des durées (AVEC "s")' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/duree', description: 'Gestion des durées (SANS "s") - REDIRECTION' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/types-formation', description: 'Gestion des types de formation' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/adherents', description: 'Gestion des adhérents' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/admin', description: '✅ Gestion des utilisateurs (Admin)' },
-            { method: 'GET,POST', path: '/api/chatbot', description: 'Chatbot - Questions/Réponses' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/cibles', description: 'Gestion des cibles' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/payments', description: 'Gestion des paiements' },
-            { method: 'GET,POST,PUT,DELETE', path: '/api/about', description: 'Gestion de la page "À propos"' },
-            { method: 'GET', path: '/api/adherents/:id/formations/:fid/check-cmpl', description: 'Vérifier si les infos Cmpl existent' },
-            { method: 'GET', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Récupérer les infos Cmpl' },
-            { method: 'POST', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Sauvegarder les infos Cmpl' },
-            { method: 'PUT', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Mettre à jour les infos Cmpl' },
-            { method: 'DELETE', path: '/api/adherents/:id/formations/:fid/cmpl', description: 'Supprimer les infos Cmpl' },
-            { method: 'GET', path: '/api/adherents/formations/:fid/is-religieuse', description: 'Vérifier si formation religieuse' },
-            { method: 'GET', path: '/api/admin/paiement-validation/list', description: 'Liste des validations' },
-            { method: 'GET', path: '/api/admin/paiement-validation/stats', description: 'Statistiques des validations' },
-            { method: 'GET', path: '/api/admin/paiement-validation/paiement/:id', description: 'Validations d\'un paiement' },
-            { method: 'POST', path: '/api/admin/paiement-validation', description: 'Créer une validation' },
-            { method: 'PUT', path: '/api/admin/paiement-validation/:id', description: 'Mettre à jour une validation' },
-            { method: 'DELETE', path: '/api/admin/paiement-validation/:id', description: 'Supprimer une validation' }
-        ]
+        upload: {
+            enabled: true,
+            maxSize: '10MB',
+            supportedFormats: ['JPG', 'PNG', 'WEBP', 'GIF']
+        },
+        documentation: '/api/test'
     });
 });
 
@@ -570,6 +319,7 @@ app.use((req, res) => {
             '/api/test',
             '/api/formations',
             '/api/formateurs',
+            '/api/formateurs/upload ⭐',
             '/api/categories',
             '/api/upload',
             '/api/upload/image',
@@ -578,13 +328,11 @@ app.use((req, res) => {
             '/api/duree',
             '/api/types-formation',
             '/api/adherents',
-            '/api/admin', // ✅ NOUVEAU
+            '/api/admin',
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
-            '/api/about',
-            '/api/adherents/:id/formations/:fid/*',
-            '/api/admin/paiement-validation'
+            '/api/about'
         ]
     });
 });
@@ -595,10 +343,27 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
     console.error(`❌ [ERREUR SERVEUR] ${err.message}`);
     console.error('   Stack:', err.stack);
+    
+    // Erreur de file upload (trop volumineux)
+    if (err.code === 'FILE_TOO_LARGE') {
+        return res.status(413).json({
+            success: false,
+            message: 'Le fichier est trop volumineux (max 10MB)'
+        });
+    }
+    
+    // Erreur de type de fichier
+    if (err.code === 'UNSUPPORTED_MEDIA_TYPE') {
+        return res.status(415).json({
+            success: false,
+            message: 'Type de fichier non supporté'
+        });
+    }
+    
     res.status(500).json({ 
         success: false, 
         message: 'Erreur interne du serveur',
-        error: err.message 
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
 
@@ -609,6 +374,7 @@ console.log('\n📋 RÉSUMÉ DES ROUTES DISPONIBLES:');
 console.log('   ✅ /api/test');
 console.log('   ✅ /api/formations');
 console.log('   ✅ /api/formateurs');
+console.log('   ✅ /api/formateurs/upload ⭐ (UPLOAD PHOTOS)');
 console.log('   ✅ /api/categories');
 console.log('   ✅ /api/upload');
 console.log('   ✅ /api/upload/image');
@@ -617,50 +383,57 @@ console.log('   ✅ /api/durees (AVEC "s")');
 console.log('   ✅ /api/duree (SANS "s") - REDIRECTION');
 console.log('   ✅ /api/types-formation');
 console.log('   ✅ /api/adherents');
-console.log('   ✅ /api/admin (✅ NOUVEAU - Gestion des utilisateurs)');
+console.log('   ✅ /api/admin');
 console.log('   ✅ /api/chatbot');
 console.log('   ✅ /api/cibles');
 console.log('   ✅ /api/payments');
 console.log('   ✅ /api/about');
-console.log('   ✅ /api/adherents/:id/formations/:fid/check-cmpl (CmplUser)');
-console.log('   ✅ /api/adherents/:id/formations/:fid/cmpl (CmplUser - GET, POST, PUT, DELETE)');
-console.log('   ✅ /api/adherents/formations/:fid/is-religieuse (CmplUser)');
-console.log('   ✅ /api/admin/paiement-validation (PaiementValidation)');
 console.log('   ✅ /');
 
-console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
+console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
 console.log(`📁 Dossier uploads: ${uploadsDir}`);
 console.log(`📁 Dossier formations: ${formationsDir}`);
 console.log(`📁 Dossier quittances: ${quittancesDir}`);
+console.log(`📁 Dossier formateurs: ${formateursDir}`);
+
+console.log('\n📸 UPLOAD PHOTOS FORMATEURS:');
+console.log(`   URL: http://localhost:${PORT}/api/formateurs/upload`);
+console.log('   Méthode: POST');
+console.log('   Champ: photo');
+console.log('   Formats: JPG, PNG, WEBP, GIF');
+console.log('   Taille max: 5MB (configuré dans le contrôleur)');
+console.log('   Taille max globale: 10MB (configuré dans server.js)');
+
+console.log('\n📝 TEST AVEC CURL:');
+console.log(`   curl -X POST http://localhost:${PORT}/api/formateurs/upload \\`);
+console.log('        -F "photo=@/chemin/vers/photo.jpg"');
+console.log('');
+console.log('   Réponse attendue:');
+console.log('   {');
+console.log('     "success": true,');
+console.log('     "message": "Photo uploadée avec succès",');
+console.log('     "fileName": "formateur_uuid.jpg",');
+console.log('     "filePath": "/uploads/formateurs/formateur_uuid.jpg"');
+console.log('   }');
+
+console.log('\n🔍 TEST AVEC FLUTTER:');
+console.log('   Vérifiez que votre URL est:');
+console.log(`   ${isProduction ? 'https://www.nafahat-academy.com' : 'http://localhost:3000'}/api/formateurs/upload`);
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
 app.listen(PORT, () => {
-    console.log(`✅ Serveur démarré sur http://localhost:${PORT}`);
+    console.log(`\n✅ Serveur démarré sur http://localhost:${PORT}`);
     console.log(`📋 Testez l'API: http://localhost:${PORT}/api/test`);
-    console.log(`📋 About: http://localhost:${PORT}/api/about`);
-    console.log(`📋 Upload image: http://localhost:${PORT}/api/upload/image`);
-    console.log(`📋 Durées (avec s): http://localhost:${PORT}/api/durees`);
-    console.log(`📋 Durées (sans s): http://localhost:${PORT}/api/duree`);
-    console.log(`📋 Chatbot: http://localhost:${PORT}/api/chatbot/categories`);
-    console.log(`📋 Cibles: http://localhost:${PORT}/api/cibles`);
-    console.log(`📋 Paiements: http://localhost:${PORT}/api/payments`);
-    console.log(`📋 CmplUser: http://localhost:${PORT}/api/adherents/1/formations/1/check-cmpl`);
-    console.log(`📋 Admin Users: http://localhost:${PORT}/api/admin/users`); // ✅ NOUVEAU
-    console.log(`📋 Paiement Validation: http://localhost:${PORT}/api/admin/paiement-validation/list`);
+    console.log(`📸 Upload formateur: http://localhost:${PORT}/api/formateurs/upload`);
     console.log('\n💡 IMPORTANT:');
-    console.log('   - Les images uploadées sont stockées dans uploads/formations/');
+    console.log('   - Les images de formations sont stockées dans uploads/formations/');
     console.log('   - Les quittances sont stockées dans uploads/quittances/');
-    console.log('   - Le frontend appelle /api/upload/image pour uploader les images');
-    console.log('   - Le frontend appelle /api/duree (sans "s")');
-    console.log('   - Le backend utilise /api/durees (avec "s")');
-    console.log('   - La redirection est automatique !');
-    console.log('   - Les cibles sont accessibles via /api/cibles');
-    console.log('   - Les paiements sont accessibles via /api/payments');
-    console.log('   - La page "À propos" est accessible via /api/about');
-    console.log('   - Les routes CmplUser sont accessibles via /api/adherents/:id/formations/:fid/*');
-    console.log('   - Les routes Admin sont accessibles via /api/admin/* (✅ NOUVEAU)');
-    console.log('   - Les routes PaiementValidation sont accessibles via /api/admin/paiement-validation/*');
+    console.log('   - Les photos des formateurs sont stockées dans uploads/formateurs/');
+    console.log('   - Le frontend appelle /api/upload/image pour uploader les images de formations');
+    console.log('   - Le frontend appelle /api/formateurs/upload pour uploader les photos des formateurs');
     console.log(`   - Les images sont servies sur /nafahat_api/uploads/formations/`);
     console.log(`   - Les quittances sont servies sur /nafahat_api/uploads/quittances/`);
+    console.log(`   - Les photos des formateurs sont servies sur /nafahat_api/uploads/formateurs/`);
     console.log(`   - Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
+    console.log('\n✅ Serveur prêt à recevoir les uploads de photos !');
 });
