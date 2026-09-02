@@ -35,9 +35,6 @@ console.log('   ✅ JSON parser activé (limite 10MB)');
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 console.log('   ✅ URL-encoded parser activé (limite 10MB)');
 
-// ⚠️ SUPPRESSION DE express-fileupload
-// Il cause un conflit avec multer dans uploadImage.js
-// Les uploads sont gérés par multer dans les routes dédiées
 console.log('   ✅ Upload géré par multer (dans les routes)');
 
 // =============================================
@@ -50,7 +47,6 @@ const formationsDir = path.join(uploadsDir, 'formations');
 const quittancesDir = path.join(uploadsDir, 'quittances');
 const formateursDir = path.join(uploadsDir, 'formateurs');
 
-// Fonction utilitaire pour créer les dossiers
 const createDirectory = (dirPath, name) => {
     if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true });
@@ -70,7 +66,6 @@ createDirectory(formateursDir, 'uploads/formateurs');
 // =============================================
 console.log('📁 Configuration des fichiers statiques...');
 
-// Routes statiques principales
 app.use('/uploads', express.static(uploadsDir));
 console.log('   ✅ /uploads activé');
 
@@ -146,6 +141,7 @@ const loadRoute = (routePath, routeName) => {
 };
 
 // Chargement de toutes les routes
+const bullRoutes = loadRoute('./routes/bullRoutes', 'bulls'); // ✅ NOUVEAU
 const formationRoutes = loadRoute('./routes/formations', 'formations');
 const formateurRoutes = loadRoute('./routes/formateurs', 'formateurs');
 const categorieRoutes = loadRoute('./routes/categories', 'categories');
@@ -169,12 +165,10 @@ const paiementValidationRoutes = loadRoute('./routes/paiementValidationRoutes', 
 const logMiddleware = (routeName) => (req, res, next) => {
     console.log(`📥 [${routeName}] ${req.method} ${req.url}`);
     
-    // Log des fichiers uploadés (multer les met dans req.file)
     if (req.file) {
         console.log(`   📎 Fichier reçu: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)}KB)`);
     }
     
-    // Log du body (sans les données sensibles)
     if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
         const logBody = { ...req.body };
         if (logBody.password) logBody.password = '***';
@@ -215,6 +209,9 @@ app.get('/api/test', (req, res) => {
         },
         routes: [
             '/api/test',
+            '/api/bulls',           // ✅ NOUVEAU
+            '/api/bulls/available-targets', // ✅ NOUVEAU
+            '/api/bulls/reorder',   // ✅ NOUVEAU
             '/api/formations',
             '/api/formateurs',
             '/api/formateurs/upload ⭐',
@@ -250,13 +247,28 @@ const registerRoute = (route, path, name) => {
 };
 
 // =============================================
+// ENREGISTREMENT DES ROUTES BULLS
+// =============================================
+console.log('\n📌 Enregistrement des routes Bulls...');
+
+// ✅ ROUTES BULLS (avec log spécifique)
+if (bullRoutes) {
+    app.use('/api/bulls', logMiddleware('bulls'), bullRoutes);
+    console.log('   ✅ /api/bulls enregistré (Gestion des liens)');
+    console.log('   ✅ /api/bulls/available-targets enregistré');
+    console.log('   ✅ /api/bulls/reorder enregistré');
+    console.log('   ✅ /api/bulls/:id enregistré');
+} else {
+    console.log('   ⚠️ /api/bulls non enregistré (route manquante)');
+}
+
+// =============================================
 // ENREGISTREMENT DES ROUTES D'UPLOAD
 // =============================================
+console.log('\n📌 Enregistrement des routes d\'upload...');
 
-// ✅ Route principale d'upload d'images (formations) - utilise multer
 registerRoute(uploadImageRoutes, '/api/upload', 'uploadImage');
 
-// ✅ Route alternative pour compatibilité (upload simple) - utilise multer
 if (uploadRoutes) {
     app.use('/api/upload/simple', logMiddleware('upload'), uploadRoutes);
     console.log('   ✅ /api/upload/simple enregistré (compatibilité)');
@@ -265,16 +277,15 @@ if (uploadRoutes) {
 // =============================================
 // ENREGISTREMENT DES AUTRES ROUTES
 // =============================================
+console.log('\n📌 Enregistrement des autres routes...');
 
 registerRoute(formationRoutes, '/api/formations', 'formations');
 registerRoute(formateurRoutes, '/api/formateurs', 'formateurs');
 registerRoute(categorieRoutes, '/api/categories', 'categories');
 registerRoute(videosRoutes, '/api/videos', 'videos');
 
-// Route /api/durees (avec 's')
 registerRoute(dureeRoutes, '/api/durees', 'durees');
 
-// Route /api/duree (sans 's') avec redirection
 if (dureeRoutes) {
     app.use('/api/duree', logMiddleware('duree'), (req, res, next) => {
         req.url = req.url.replace('/api/duree', '/api/durees');
@@ -312,7 +323,18 @@ app.get('/', (req, res) => {
                 formateurs: '/api/formateurs/upload'
             }
         },
-        documentation: '/api/test'
+        documentation: '/api/test',
+        bulls: {
+            endpoints: {
+                getAll: '/api/bulls',
+                getById: '/api/bulls/:id',
+                create: '/api/bulls',
+                update: '/api/bulls/:id',
+                delete: '/api/bulls/:id',
+                reorder: '/api/bulls/reorder',
+                availableTargets: '/api/bulls/available-targets'
+            }
+        }
     });
 });
 
@@ -326,6 +348,10 @@ app.use((req, res) => {
         message: `Route ${req.method} ${req.url} non trouvée`,
         availableRoutes: [
             '/api/test',
+            '/api/bulls',
+            '/api/bulls/available-targets',
+            '/api/bulls/reorder',
+            '/api/bulls/:id',
             '/api/formations',
             '/api/formateurs',
             '/api/formateurs/upload ⭐',
@@ -355,7 +381,6 @@ app.use((err, req, res, next) => {
     console.error(`❌ [ERREUR SERVEUR] ${err.message}`);
     console.error('   Stack:', err.stack);
     
-    // Erreur de file upload (trop volumineux)
     if (err.code === 'FILE_TOO_LARGE') {
         return res.status(413).json({
             success: false,
@@ -363,7 +388,6 @@ app.use((err, req, res, next) => {
         });
     }
     
-    // Erreur de type de fichier
     if (err.code === 'UNSUPPORTED_MEDIA_TYPE') {
         return res.status(415).json({
             success: false,
@@ -371,7 +395,6 @@ app.use((err, req, res, next) => {
         });
     }
     
-    // Erreur multer
     if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({
             success: false,
@@ -398,6 +421,10 @@ app.use((err, req, res, next) => {
 // =============================================
 console.log('\n📋 RÉSUMÉ DES ROUTES DISPONIBLES:');
 console.log('   ✅ /api/test');
+console.log('   ✅ /api/bulls (GESTION DES LIENS)');
+console.log('   ✅ /api/bulls/available-targets');
+console.log('   ✅ /api/bulls/reorder');
+console.log('   ✅ /api/bulls/:id');
 console.log('   ✅ /api/formations');
 console.log('   ✅ /api/formateurs');
 console.log('   ✅ /api/formateurs/upload ⭐ (UPLOAD PHOTOS FORMATEURS)');
@@ -429,7 +456,7 @@ console.log(`   URL: http://localhost:${PORT}/api/formateurs/upload`);
 console.log('   Méthode: POST');
 console.log('   Champ: photo');
 console.log('   Formats: JPG, PNG, WEBP, GIF');
-console.log('   Taille max: 5MB (configuré dans le contrôleur)');
+console.log('   Taille max: 5MB');
 
 console.log('\n📸 UPLOAD IMAGES FORMATIONS:');
 console.log(`   URL: http://localhost:${PORT}/api/upload/image`);
@@ -439,18 +466,29 @@ console.log('   Champ: image');
 console.log('   Formats: JPG, PNG, WEBP, GIF');
 console.log('   Taille max: 10MB');
 
+console.log('\n🔗 BULLS (GESTION DES LIENS):');
+console.log(`   GET    http://localhost:${PORT}/api/bulls`);
+console.log(`   POST   http://localhost:${PORT}/api/bulls`);
+console.log(`   PUT    http://localhost:${PORT}/api/bulls/:id`);
+console.log(`   DELETE http://localhost:${PORT}/api/bulls/:id`);
+console.log(`   POST   http://localhost:${PORT}/api/bulls/reorder`);
+console.log(`   GET    http://localhost:${PORT}/api/bulls/available-targets`);
+
 console.log('\n📝 TEST AVEC CURL:');
-console.log('   # Upload image formation:');
-console.log(`   curl -X POST http://localhost:${PORT}/api/upload/image \\`);
-console.log('        -F "image=@/chemin/vers/image.jpg"');
+console.log('   # Récupérer tous les bulls:');
+console.log(`   curl http://localhost:${PORT}/api/bulls`);
 console.log('');
-console.log('   # Upload photo formateur:');
-console.log(`   curl -X POST http://localhost:${PORT}/api/formateurs/upload \\`);
-console.log('        -F "photo=@/chemin/vers/photo.jpg"');
+console.log('   # Récupérer les cibles disponibles:');
+console.log(`   curl http://localhost:${PORT}/api/bulls/available-targets`);
+console.log('');
+console.log('   # Créer un bull:');
+console.log(`   curl -X POST http://localhost:${PORT}/api/bulls \\`);
+console.log('        -H "Content-Type: application/json" \\');
+console.log('        -d \'{"title":"Formations","titleAr":"الدورات","titleFr":"Formations","targetType":"page","link":"/formations","backgroundColor":"#0D443E","textColor":"#FFFFFF","borderColor":"#C4A46C","fontSize":14,"isActive":true}\'');
 
 console.log('\n🔍 TEST AVEC FLUTTER:');
 console.log('   Vérifiez que votre URL est:');
-console.log(`   ${isProduction ? 'https://www.nafahat-academy.com' : 'http://localhost:3000'}/api/upload/image`);
+console.log(`   ${isProduction ? 'https://www.nafahat-academy.com' : 'http://localhost:3000'}/api/bulls`);
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
 app.listen(PORT, () => {
@@ -458,15 +496,13 @@ app.listen(PORT, () => {
     console.log(`📋 Testez l'API: http://localhost:${PORT}/api/test`);
     console.log(`📸 Upload formation: http://localhost:${PORT}/api/upload/image`);
     console.log(`📸 Upload formateur: http://localhost:${PORT}/api/formateurs/upload`);
+    console.log(`🔗 Bulls API: http://localhost:${PORT}/api/bulls`);
     console.log('\n💡 IMPORTANT:');
     console.log('   - Les images de formations sont stockées dans uploads/formations/');
     console.log('   - Les quittances sont stockées dans uploads/quittances/');
     console.log('   - Les photos des formateurs sont stockées dans uploads/formateurs/');
-    console.log('   - Le frontend appelle /api/upload/image pour uploader les images de formations');
-    console.log('   - Le frontend appelle /api/formateurs/upload pour uploader les photos des formateurs');
-    console.log(`   - Les images sont servies sur /nafahat_api/uploads/formations/`);
-    console.log(`   - Les quittances sont servies sur /nafahat_api/uploads/quittances/`);
-    console.log(`   - Les photos des formateurs sont servies sur /nafahat_api/uploads/formateurs/`);
+    console.log('   - Les bulls sont stockés dans la table "bulls" de la base de données');
+    console.log('   - Les bulls peuvent pointer vers: catégorie, formateur, vidéo, page, section');
     console.log(`   - Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
-    console.log('\n✅ Serveur prêt à recevoir les uploads de photos !');
+    console.log('\n✅ Serveur prêt !');
 });
