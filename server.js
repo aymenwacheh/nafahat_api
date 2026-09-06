@@ -35,8 +35,6 @@ console.log('   ✅ JSON parser activé (limite 10MB)');
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 console.log('   ✅ URL-encoded parser activé (limite 10MB)');
 
-console.log('   ✅ Upload géré par multer (dans les routes)');
-
 // =============================================
 // CRÉATION DES DOSSIERS UPLOADS
 // =============================================
@@ -74,9 +72,10 @@ console.log('   ✅ /uploads activé');
 // =============================================
 const isProduction = process.env.NODE_ENV === 'production' || 
                      process.env.HOSTNAME === 'www.nafahat-academy.com' ||
-                     process.env.BASE_URL === 'http://www.nafahat-academy.com';
+                     process.env.BASE_URL === 'https://www.nafahat-academy.com';
 
 console.log(`   🌍 Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
+console.log(`   🔗 BASE_URL: ${process.env.BASE_URL || 'http://localhost:3000'}`);
 
 // Routes statiques pour la production
 const staticRoutes = [
@@ -141,7 +140,7 @@ const loadRoute = (routePath, routeName) => {
 };
 
 // Chargement de toutes les routes
-const bullRoutes = loadRoute('./routes/bullRoutes', 'bulls'); // ✅ NOUVEAU
+const bullRoutes = loadRoute('./routes/bullRoutes', 'bulls');
 const formationRoutes = loadRoute('./routes/formations', 'formations');
 const formateurRoutes = loadRoute('./routes/formateurs', 'formateurs');
 const categorieRoutes = loadRoute('./routes/categories', 'categories');
@@ -169,10 +168,11 @@ const logMiddleware = (routeName) => (req, res, next) => {
         console.log(`   📎 Fichier reçu: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)}KB)`);
     }
     
-    if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+    if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body && Object.keys(req.body).length > 0) {
         const logBody = { ...req.body };
         if (logBody.password) logBody.password = '***';
         if (logBody.token) logBody.token = '***';
+        if (logBody.motDePasse) logBody.motDePasse = '***';
         const bodyStr = JSON.stringify(logBody);
         if (bodyStr.length > 300) {
             console.log(`   📋 Body: ${bodyStr.substring(0, 300)}...`);
@@ -185,9 +185,9 @@ const logMiddleware = (routeName) => (req, res, next) => {
 };
 
 // =============================================
-// ENREGISTREMENT DES ROUTES
+// ENREGISTREMENT DES ROUTES API
 // =============================================
-console.log('\n📌 Enregistrement des routes...');
+console.log('\n📌 Enregistrement des routes API...');
 
 // Route de test
 app.get('/api/test', (req, res) => {
@@ -197,6 +197,11 @@ app.get('/api/test', (req, res) => {
         message: 'API fonctionne !',
         timestamp: new Date().toISOString(),
         environment: isProduction ? 'PRODUCTION' : 'DEVELOPPEMENT',
+        resetPassword: {
+            endpoint: '/api/adherents/request-password-reset',
+            page: '/reset-password?token=XXXXX',
+            baseUrl: process.env.BASE_URL || 'http://localhost:3000'
+        },
         upload: {
             enabled: true,
             maxSize: '10MB',
@@ -209,9 +214,9 @@ app.get('/api/test', (req, res) => {
         },
         routes: [
             '/api/test',
-            '/api/bulls',           // ✅ NOUVEAU
-            '/api/bulls/available-targets', // ✅ NOUVEAU
-            '/api/bulls/reorder',   // ✅ NOUVEAU
+            '/api/bulls',
+            '/api/bulls/available-targets',
+            '/api/bulls/reorder',
             '/api/formations',
             '/api/formateurs',
             '/api/formateurs/upload ⭐',
@@ -235,23 +240,19 @@ app.get('/api/test', (req, res) => {
 });
 
 // Fonction pour enregistrer une route avec logs
-const registerRoute = (route, path, name) => {
+const registerRoute = (route, pathRoute, name) => {
     if (route) {
-        app.use(path, logMiddleware(name), route);
-        console.log(`   ✅ ${path} enregistré`);
+        app.use(pathRoute, logMiddleware(name), route);
+        console.log(`   ✅ ${pathRoute} enregistré`);
         return true;
     } else {
-        console.log(`   ⚠️ ${path} non enregistré (route manquante)`);
+        console.log(`   ⚠️ ${pathRoute} non enregistré (route manquante)`);
         return false;
     }
 };
 
-// =============================================
-// ENREGISTREMENT DES ROUTES BULLS
-// =============================================
+// Enregistrement des routes Bulls
 console.log('\n📌 Enregistrement des routes Bulls...');
-
-// ✅ ROUTES BULLS (avec log spécifique)
 if (bullRoutes) {
     app.use('/api/bulls', logMiddleware('bulls'), bullRoutes);
     console.log('   ✅ /api/bulls enregistré (Gestion des liens)');
@@ -262,11 +263,8 @@ if (bullRoutes) {
     console.log('   ⚠️ /api/bulls non enregistré (route manquante)');
 }
 
-// =============================================
-// ENREGISTREMENT DES ROUTES D'UPLOAD
-// =============================================
+// Enregistrement des routes d'upload
 console.log('\n📌 Enregistrement des routes d\'upload...');
-
 registerRoute(uploadImageRoutes, '/api/upload', 'uploadImage');
 
 if (uploadRoutes) {
@@ -274,11 +272,8 @@ if (uploadRoutes) {
     console.log('   ✅ /api/upload/simple enregistré (compatibilité)');
 }
 
-// =============================================
-// ENREGISTREMENT DES AUTRES ROUTES
-// =============================================
+// Enregistrement des autres routes
 console.log('\n📌 Enregistrement des autres routes...');
-
 registerRoute(formationRoutes, '/api/formations', 'formations');
 registerRoute(formateurRoutes, '/api/formateurs', 'formateurs');
 registerRoute(categorieRoutes, '/api/categories', 'categories');
@@ -304,15 +299,98 @@ registerRoute(aboutRoutes, '/api/about', 'about');
 registerRoute(cmplUserRoutes, '/api/adherents', 'cmplUser');
 registerRoute(paiementValidationRoutes, '/api/admin/paiement-validation', 'paiement-validation');
 
+console.log('✅ Routes API enregistrées');
+
 // =============================================
-// ROUTE D'ACCUEIL
+// ✅ ROUTES WEB (PAGES HTML)
+// =============================================
+console.log('\n📁 Configuration des routes web...');
+
+// Chemin du build web Flutter
+const webBuildPath = path.join(__dirname, '../build/web');
+const webBuildExists = fs.existsSync(webBuildPath) && fs.existsSync(path.join(webBuildPath, 'index.html'));
+
+// Chemin alternatif pour le build web (dans le même dossier)
+const webBuildPathAlt = path.join(__dirname, 'build/web');
+const webBuildExistsAlt = fs.existsSync(webBuildPathAlt) && fs.existsSync(path.join(webBuildPathAlt, 'index.html'));
+
+// Utiliser le bon chemin
+let finalWebBuildPath = null;
+if (webBuildExists) {
+    finalWebBuildPath = webBuildPath;
+    console.log(`   ✅ Build web trouvé: ${webBuildPath}`);
+} else if (webBuildExistsAlt) {
+    finalWebBuildPath = webBuildPathAlt;
+    console.log(`   ✅ Build web trouvé: ${webBuildPathAlt}`);
+} else {
+    console.log(`   ⚠️ Build web non trouvé`);
+    console.log(`      - Recherché dans: ${webBuildPath}`);
+    console.log(`      - Recherché dans: ${webBuildPathAlt}`);
+    console.log('   💡 Pour créer le build web: flutter build web');
+}
+
+// Servir les fichiers statiques du build web
+if (finalWebBuildPath) {
+    app.use(express.static(finalWebBuildPath));
+    console.log(`   ✅ Fichiers statiques servis depuis: ${finalWebBuildPath}`);
+}
+
+
+// =============================================
+// ✅ ROUTE DE RÉINITIALISATION DU MOT DE PASSE
+// -> Sert l'app Flutter (même pattern que /connexion) au lieu d'une
+//    page HTML statique, pour que ResetPasswordPage.dart (avec la
+//    connexion automatique après reset) soit réellement utilisée.
+// =============================================
+app.get('/reset-password', (req, res) => {
+    const token = req.query.token;
+    console.log(`🔑 [GET /reset-password] Token: ${token || 'Aucun token'}`);
+
+    if (finalWebBuildPath) {
+        const indexPath = path.join(finalWebBuildPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+            return res.sendFile(indexPath);
+        }
+    }
+
+    // Fallback si le build web n'est pas disponible
+    res.status(503).json({
+        success: false,
+        error: "L'application n'est pas disponible pour le moment."
+    });
+});
+
+// =============================================
+// ✅ ROUTE DE CONNEXION
+// =============================================
+app.get('/connexion', (req, res) => {
+    console.log(`🔑 [GET /connexion] Page de connexion`);
+    
+    if (finalWebBuildPath) {
+        const indexPath = path.join(finalWebBuildPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+            return res.sendFile(indexPath);
+        }
+    }
+    
+    // Fallback vers la page de reset
+    res.redirect('/reset-password');
+});
+
+// =============================================
+// ✅ ROUTE D'ACCUEIL (API)
 // =============================================
 app.get('/', (req, res) => {
-    console.log('🔍 [GET /] Page d\'accueil appelée');
+    console.log('🔍 [GET /] Page d\'accueil API appelée');
     res.json({ 
         message: 'Bienvenue sur l\'API Nafahat',
         version: '1.0.0',
         environment: isProduction ? 'PRODUCTION' : 'DEVELOPPEMENT',
+        baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+        resetPassword: {
+            request: '/api/adherents/request-password-reset',
+            page: '/reset-password?token=XXXXX'
+        },
         upload: {
             enabled: true,
             maxSize: '10MB',
@@ -335,6 +413,31 @@ app.get('/', (req, res) => {
                 availableTargets: '/api/bulls/available-targets'
             }
         }
+    });
+});
+
+// =============================================
+// ✅ ROUTE CATCH-ALL POUR LES PAGES WEB
+// =============================================
+app.get('*', (req, res) => {
+    // Ne pas interférer avec les routes API
+    if (req.path.startsWith('/api/')) {
+        return; // Laissé passer pour le middleware 404
+    }
+    
+    // Si le build web existe, servir index.html
+    if (finalWebBuildPath) {
+        const indexPath = path.join(finalWebBuildPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+            console.log(`📄 [GET] Servir index.html pour: ${req.path}`);
+            return res.sendFile(indexPath);
+        }
+    }
+    
+    // Sinon, laisser le middleware 404 gérer
+    res.status(404).json({ 
+        success: false, 
+        message: `Route ${req.method} ${req.url} non trouvée`
     });
 });
 
@@ -369,7 +472,10 @@ app.use((req, res) => {
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
-            '/api/about'
+            '/api/about',
+            '/reset-password',
+            '/connexion',
+            '/'
         ]
     });
 });
@@ -419,7 +525,11 @@ app.use((err, req, res, next) => {
 // =============================================
 // DÉMARRAGE DU SERVEUR
 // =============================================
-console.log('\n📋 RÉSUMÉ DES ROUTES DISPONIBLES:');
+console.log('\n' + '═'.repeat(50));
+console.log('📋 RÉSUMÉ DES ROUTES DISPONIBLES');
+console.log('═'.repeat(50));
+
+console.log('\n🔌 ROUTES API:');
 console.log('   ✅ /api/test');
 console.log('   ✅ /api/bulls (GESTION DES LIENS)');
 console.log('   ✅ /api/bulls/available-targets');
@@ -443,66 +553,44 @@ console.log('   ✅ /api/chatbot');
 console.log('   ✅ /api/cibles');
 console.log('   ✅ /api/payments');
 console.log('   ✅ /api/about');
-console.log('   ✅ /');
+
+console.log('\n🌐 ROUTES WEB:');
+console.log('   ✅ /reset-password (PAGE DE RÉINITIALISATION)');
+console.log('   ✅ /connexion (PAGE DE CONNEXION)');
+console.log(`   ✅ / (PAGE D\'ACCUEIL ${finalWebBuildPath ? 'WEB' : 'API'})`);
+
+console.log('\n🔑 RÉINITIALISATION DU MOT DE PASSE:');
+console.log(`   📧 POST   ${process.env.BASE_URL || 'http://localhost:3000'}/api/adherents/request-password-reset`);
+console.log(`   🔐 POST   ${process.env.BASE_URL || 'http://localhost:3000'}/api/adherents/reset-password-with-token`);
+console.log(`   ✅ GET    ${process.env.BASE_URL || 'http://localhost:3000'}/api/adherents/verify-reset-token`);
+console.log(`   🌐 GET    ${process.env.BASE_URL || 'http://localhost:3000'}/reset-password?token=XXXXX`);
+
+console.log('\n📁 DOSSIERS:');
+console.log(`   📁 Dossier uploads: ${uploadsDir}`);
+console.log(`   📁 Dossier formations: ${formationsDir}`);
+console.log(`   📁 Dossier quittances: ${quittancesDir}`);
+console.log(`   📁 Dossier formateurs: ${formateursDir}`);
+console.log(`   📁 Build web: ${finalWebBuildPath || 'NON TROUVÉ'}`);
 
 console.log(`\n🌍 Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
-console.log(`📁 Dossier uploads: ${uploadsDir}`);
-console.log(`📁 Dossier formations: ${formationsDir}`);
-console.log(`📁 Dossier quittances: ${quittancesDir}`);
-console.log(`📁 Dossier formateurs: ${formateursDir}`);
-
-console.log('\n📸 UPLOAD PHOTOS FORMATEURS:');
-console.log(`   URL: http://localhost:${PORT}/api/formateurs/upload`);
-console.log('   Méthode: POST');
-console.log('   Champ: photo');
-console.log('   Formats: JPG, PNG, WEBP, GIF');
-console.log('   Taille max: 5MB');
-
-console.log('\n📸 UPLOAD IMAGES FORMATIONS:');
-console.log(`   URL: http://localhost:${PORT}/api/upload/image`);
-console.log(`   URL alternative: http://localhost:${PORT}/api/upload/image-auto`);
-console.log('   Méthode: POST');
-console.log('   Champ: image');
-console.log('   Formats: JPG, PNG, WEBP, GIF');
-console.log('   Taille max: 10MB');
-
-console.log('\n🔗 BULLS (GESTION DES LIENS):');
-console.log(`   GET    http://localhost:${PORT}/api/bulls`);
-console.log(`   POST   http://localhost:${PORT}/api/bulls`);
-console.log(`   PUT    http://localhost:${PORT}/api/bulls/:id`);
-console.log(`   DELETE http://localhost:${PORT}/api/bulls/:id`);
-console.log(`   POST   http://localhost:${PORT}/api/bulls/reorder`);
-console.log(`   GET    http://localhost:${PORT}/api/bulls/available-targets`);
+console.log(`🔗 BASE_URL: ${process.env.BASE_URL || 'http://localhost:3000'}`);
 
 console.log('\n📝 TEST AVEC CURL:');
-console.log('   # Récupérer tous les bulls:');
-console.log(`   curl http://localhost:${PORT}/api/bulls`);
-console.log('');
-console.log('   # Récupérer les cibles disponibles:');
-console.log(`   curl http://localhost:${PORT}/api/bulls/available-targets`);
-console.log('');
-console.log('   # Créer un bull:');
-console.log(`   curl -X POST http://localhost:${PORT}/api/bulls \\`);
+console.log('   # Demander la réinitialisation:');
+console.log(`   curl -X POST ${process.env.BASE_URL || 'http://localhost:3000'}/api/adherents/request-password-reset \\`);
 console.log('        -H "Content-Type: application/json" \\');
-console.log('        -d \'{"title":"Formations","titleAr":"الدورات","titleFr":"Formations","targetType":"page","link":"/formations","backgroundColor":"#0D443E","textColor":"#FFFFFF","borderColor":"#C4A46C","fontSize":14,"isActive":true}\'');
-
-console.log('\n🔍 TEST AVEC FLUTTER:');
-console.log('   Vérifiez que votre URL est:');
-console.log(`   ${isProduction ? 'https://www.nafahat-academy.com' : 'http://localhost:3000'}/api/bulls`);
+console.log('        -d \'{"email":"tonemail@test.com"}\'');
 
 console.log('\n🚀 DÉMARRAGE DU SERVEUR...');
+console.log('═'.repeat(50));
+
 app.listen(PORT, () => {
     console.log(`\n✅ Serveur démarré sur http://localhost:${PORT}`);
     console.log(`📋 Testez l'API: http://localhost:${PORT}/api/test`);
     console.log(`📸 Upload formation: http://localhost:${PORT}/api/upload/image`);
     console.log(`📸 Upload formateur: http://localhost:${PORT}/api/formateurs/upload`);
     console.log(`🔗 Bulls API: http://localhost:${PORT}/api/bulls`);
-    console.log('\n💡 IMPORTANT:');
-    console.log('   - Les images de formations sont stockées dans uploads/formations/');
-    console.log('   - Les quittances sont stockées dans uploads/quittances/');
-    console.log('   - Les photos des formateurs sont stockées dans uploads/formateurs/');
-    console.log('   - Les bulls sont stockés dans la table "bulls" de la base de données');
-    console.log('   - Les bulls peuvent pointer vers: catégorie, formateur, vidéo, page, section');
-    console.log(`   - Environnement: ${isProduction ? 'PRODUCTION 🔥' : 'DÉVELOPPEMENT 💻'}`);
-    console.log('\n✅ Serveur prêt !');
+    console.log(`🔑 Reset password: http://localhost:${PORT}/reset-password?token=XXXXX`);
+    console.log(`🌐 Base URL: ${process.env.BASE_URL || 'http://localhost:3000'}`);
+    console.log('\n✅ Serveur prêt ! 🚀');
 });

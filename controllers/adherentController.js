@@ -2,8 +2,10 @@
 const db = require('../config/database');
 
 // ============================================================
-// FONCTION UTILITAIRE : Générer le message WhatsApp
+// FONCTIONS UTILITAIRES
 // ============================================================
+
+// Générer le message WhatsApp
 function generateWhatsAppMessage(nomPrenom, whatsapp, motDePasse) {
   return `📢 *Confirmation d'inscription - Académie Nafahat*
 
@@ -19,16 +21,12 @@ https://nafahat.com/connexion
 📞 *Académie Nafahat*`;
 }
 
-// ============================================================
-// FONCTION UTILITAIRE : Générer le code de vérification (EMAIL 1)
-// ============================================================
+// Générer le code de vérification
 function generateVerificationCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// ============================================================
-// FONCTION UTILITAIRE : Générer l'email de bienvenue (EMAIL 2 - SUCCÈS)
-// ============================================================
+// Générer l'email de bienvenue
 function generateWelcomeEmail(nomPrenom, whatsapp, motDePasse) {
   return {
     subject: '🎉 Bienvenue à l\'Académie Nafahat - Vos identifiants de connexion',
@@ -60,11 +58,8 @@ function generateWelcomeEmail(nomPrenom, whatsapp, motDePasse) {
           </div>
           <div class="content">
             <h2>👋 Bonjour ${nomPrenom},</h2>
-            
             <p>Nous sommes ravis de vous accueillir à l'<strong>Académie Nafahat</strong> !</p>
-            
             <p>Votre inscription a été validée avec succès. Vous pouvez dès maintenant accéder à votre espace personnel.</p>
-            
             <div class="credentials">
               <h3 style="color: #0D443E; margin-top: 0;">🔑 Vos identifiants de connexion</h3>
               <div class="credential-item">
@@ -76,15 +71,12 @@ function generateWelcomeEmail(nomPrenom, whatsapp, motDePasse) {
                 <span class="value">${motDePasse}</span>
               </div>
             </div>
-            
             <div class="tip">
-              <strong>💡 Conseil :</strong> Nous vous recommandons de changer votre mot de passe lors de votre première connexion via l'interface "Modifier mon profil".
+              <strong>💡 Conseil :</strong> Nous vous recommandons de changer votre mot de passe lors de votre première connexion.
             </div>
-            
             <div style="text-align: center; margin: 25px 0;">
               <a href="https://nafahat.com/connexion" class="button">🚀 Se connecter</a>
             </div>
-            
             <p style="font-size: 14px; color: #666;">
               <strong>📌 Informations importantes :</strong>
             </p>
@@ -92,16 +84,9 @@ function generateWelcomeEmail(nomPrenom, whatsapp, motDePasse) {
               <li>Votre identifiant est votre numéro WhatsApp</li>
               <li>Vous pouvez modifier votre mot de passe à tout moment</li>
               <li>Accédez à vos formations depuis votre tableau de bord</li>
-              <li>Conservez ces informations précieusement</li>
             </ul>
-            
-            <p style="font-size: 14px; color: #666; margin-top: 20px;">
-              Si vous avez des questions, n'hésitez pas à nous contacter.
-            </p>
-            
             <div class="footer">
               <p>© 2024 Académie Nafahat - Tous droits réservés</p>
-              <p>Cet email a été envoyé automatiquement suite à votre inscription.</p>
             </div>
           </div>
         </div>
@@ -125,20 +110,12 @@ function generateWelcomeEmail(nomPrenom, whatsapp, motDePasse) {
 
       🔗 Se connecter : https://nafahat.com/connexion
 
-      📌 Informations importantes :
-      - Votre identifiant est votre numéro WhatsApp
-      - Vous pouvez modifier votre mot de passe à tout moment
-      - Accédez à vos formations depuis votre tableau de bord
-      - Conservez ces informations précieusement
-
       © 2024 Académie Nafahat
     `
   };
 }
 
-// ============================================================
-// FONCTION UTILITAIRE : Nettoyer les codes expirés
-// ============================================================
+// Nettoyer les codes de vérification expirés
 function cleanExpiredCodes() {
   if (!global.verificationCodes) {
     global.verificationCodes = {};
@@ -149,7 +126,7 @@ function cleanExpiredCodes() {
   const expiredKeys = [];
   
   for (const key in global.verificationCodes) {
-    if (now - global.verificationCodes[key].timestamp > 300000) { // 5 minutes
+    if (now - global.verificationCodes[key].timestamp > 300000) {
       expiredKeys.push(key);
     }
   }
@@ -159,9 +136,33 @@ function cleanExpiredCodes() {
   });
 }
 
-// ============================================================
-// FONCTION UTILITAIRE : Vérifier si l'utilisateur existe déjà
-// ============================================================
+// Nettoyer les tokens de réinitialisation expirés
+function cleanExpiredResetTokens() {
+  if (!global.resetTokens) {
+    global.resetTokens = {};
+    return;
+  }
+
+  const now = Date.now();
+  const expiredKeys = [];
+
+  for (const key in global.resetTokens) {
+    const data = global.resetTokens[key];
+    if (data.expiresAt && now > data.expiresAt) {
+      expiredKeys.push(key);
+    }
+  }
+
+  expiredKeys.forEach(key => {
+    delete global.resetTokens[key];
+  });
+
+  if (expiredKeys.length > 0) {
+    console.log(`🧹 [cleanExpiredResetTokens] ${expiredKeys.length} token(s) expiré(s) supprimé(s)`);
+  }
+}
+
+// Vérifier si l'utilisateur existe déjà
 async function checkExistingUser(whatsapp, email) {
   const errors = [];
   
@@ -173,7 +174,7 @@ async function checkExistingUser(whatsapp, email) {
     if (rows.length > 0) {
       errors.push({
         field: 'whatsapp',
-        message: 'Ce numéro WhatsApp est déjà enregistré. Veuillez vous connecter ou utiliser un autre numéro.'
+        message: 'Ce numéro WhatsApp est déjà enregistré.'
       });
     }
   }
@@ -186,7 +187,7 @@ async function checkExistingUser(whatsapp, email) {
     if (rows.length > 0) {
       errors.push({
         field: 'email',
-        message: 'Cet email est déjà enregistré. Veuillez vous connecter ou utiliser un autre email.'
+        message: 'Cet email est déjà enregistré.'
       });
     }
   }
@@ -194,16 +195,13 @@ async function checkExistingUser(whatsapp, email) {
   return errors;
 }
 
-// ============================================================
-// FONCTION UTILITAIRE : Créer l'utilisateur en base de données
-// ============================================================
+// Créer l'utilisateur en base de données
 async function createUserInDatabase(adherent, enfants) {
   const connection = await db.pool.getConnection();
   
   try {
     await connection.beginTransaction();
 
-    // Insertion de l'adhérent
     const [result] = await connection.query(
       `INSERT INTO adherent 
         (whatsapp, nom_prenom, pays, ville, email, date_naissance, genre, 
@@ -228,10 +226,8 @@ async function createUserInDatabase(adherent, enfants) {
     const adherentId = result.insertId;
     console.log(`📝 [createUserInDatabase] Adhérent créé avec ID: ${adherentId}`);
 
-    // Génération du mot de passe
     const motDePasse = `nafa-${adherentId}`;
 
-    // Insertion dans acces_adherent
     await connection.query(
       `INSERT INTO acces_adherent 
         (adherent_id, nom_prenom, whatsapp, mot_de_passe, created_at, updated_at)
@@ -244,9 +240,7 @@ async function createUserInDatabase(adherent, enfants) {
       ]
     );
 
-    // Insertion des enfants
     if (enfants && enfants.length > 0) {
-      console.log(`📝 [createUserInDatabase] Insertion de ${enfants.length} enfant(s)...`);
       for (const enfant of enfants) {
         await connection.query(
           `INSERT INTO enfant 
@@ -285,7 +279,27 @@ async function createUserInDatabase(adherent, enfants) {
 }
 
 // ============================================================
-// 1. INSCRIPTION ADHÉRENT (POST) - Version directe (sans email)
+// FONCTION UTILITAIRE : Obtenir l'URL de base du frontend
+// ============================================================
+function getFrontendUrl() {
+  // 1. Vérifier si on est en production
+  const isProduction = process.env.NODE_ENV === 'production' || 
+                       process.env.BASE_URL === 'https://www.nafahat-academy.com';
+  
+  // 2. Utiliser BASE_URL du .env
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  
+  // 3. Nettoyer l'URL (supprimer les slashes en trop)
+  const cleanUrl = baseUrl.replace(/\/+$/, '');
+  
+  console.log(`🌍 [getFrontendUrl] Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
+  console.log(`🔗 [getFrontendUrl] URL utilisée: ${cleanUrl}`);
+  
+  return cleanUrl;
+}
+
+// ============================================================
+// 1. INSCRIPTION ADHÉRENT (POST)
 // ============================================================
 exports.inscrireAdherent = async (req, res) => {
   const { adherent, enfants } = req.body;
@@ -301,7 +315,6 @@ exports.inscrireAdherent = async (req, res) => {
   }
 
   try {
-    // Vérification des doublons
     const errors = await checkExistingUser(adherent.whatsapp, adherent.email);
     
     if (errors.length > 0) {
@@ -311,15 +324,15 @@ exports.inscrireAdherent = async (req, res) => {
       errors.forEach(err => {
         fieldErrors[err.field] = err.message;
         if (err.field === 'whatsapp') {
-          errorMessage = '❌ Ce numéro WhatsApp est déjà utilisé. Veuillez vous connecter ou utiliser un autre numéro.';
+          errorMessage = '❌ Ce numéro WhatsApp est déjà utilisé.';
         }
         if (err.field === 'email') {
-          errorMessage = '❌ Cet email est déjà utilisé. Veuillez vous connecter ou utiliser un autre email.';
+          errorMessage = '❌ Cet email est déjà utilisé.';
         }
       });
       
       if (errors.length > 1) {
-        errorMessage = '❌ Le numéro WhatsApp et l\'email sont déjà enregistrés. Veuillez vous connecter.';
+        errorMessage = '❌ Le numéro WhatsApp et l\'email sont déjà enregistrés.';
       }
       
       return res.status(409).json({
@@ -332,7 +345,6 @@ exports.inscrireAdherent = async (req, res) => {
 
     const result = await createUserInDatabase(adherent, enfants);
 
-    // Construction du message WhatsApp
     const message = generateWhatsAppMessage(
       adherent.nomPrenom,
       adherent.whatsapp,
@@ -361,9 +373,9 @@ exports.inscrireAdherent = async (req, res) => {
     if (error.code === 'ER_DUP_ENTRY') {
       let errorMessage = '❌ Ces informations sont déjà enregistrées.';
       if (error.sqlMessage && error.sqlMessage.includes('whatsapp')) {
-        errorMessage = '❌ Ce numéro WhatsApp est déjà utilisé. Veuillez vous connecter.';
+        errorMessage = '❌ Ce numéro WhatsApp est déjà utilisé.';
       } else if (error.sqlMessage && error.sqlMessage.includes('email')) {
-        errorMessage = '❌ Cet email est déjà utilisé. Veuillez vous connecter.';
+        errorMessage = '❌ Cet email est déjà utilisé.';
       }
       
       return res.status(409).json({ 
@@ -845,7 +857,7 @@ exports.deleteAdherent = async (req, res) => {
 };
 
 // ============================================================
-// 10. RÉINITIALISER LE MOT DE PASSE (POST)
+// 10. RÉINITIALISER LE MOT DE PASSE (POST) - Admin
 // ============================================================
 exports.resetPassword = async (req, res) => {
   const { id } = req.params;
@@ -1417,21 +1429,162 @@ exports.deleteUser = async (req, res) => {
   }
 };
 
+// 12f. LISTE DES UTILISATEURS AVEC PAGINATION (GET)
+exports.getUsersPaginated = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || '';
+    const role = req.query.role || 'tous';
+    const sort = req.query.sort || 'id';
+    const order = req.query.order || 'desc';
+
+    let whereClause = '1=1';
+    const params = [];
+
+    if (search.trim() !== '') {
+      whereClause += ` AND (a.nom_prenom LIKE ? OR a.whatsapp LIKE ? OR a.email LIKE ?)`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (role !== 'tous') {
+      whereClause += ` AND r.nom = ?`;
+      params.push(role);
+    }
+
+    const sortMapping = {
+      'id': 'a.id',
+      'nom_prenom': 'a.nom_prenom',
+      'role_libelle': 'r.libelle',
+      'whatsapp': 'a.whatsapp',
+      'email': 'a.email',
+    };
+    const sortColumn = sortMapping[sort] || 'a.id';
+    const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    const query = `
+      SELECT 
+        a.id,
+        a.whatsapp,
+        a.nom_prenom,
+        a.email,
+        a.pays,
+        a.ville,
+        a.accord_publication,
+        a.created_at as date_inscription,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle,
+        acc.mot_de_passe,
+        acc.active
+      FROM adherent a
+      JOIN acces_adherent acc ON a.id = acc.adherent_id
+      LEFT JOIN roles r ON acc.role_id = r.id
+      WHERE ${whereClause}
+      ORDER BY ${sortColumn} ${sortOrder}
+      LIMIT ? OFFSET ?
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM adherent a
+      JOIN acces_adherent acc ON a.id = acc.adherent_id
+      LEFT JOIN roles r ON acc.role_id = r.id
+      WHERE ${whereClause}
+    `;
+
+    const paramsWithPagination = [...params, limit, offset];
+
+    const [rows] = await db.query(query, paramsWithPagination);
+    const [countResult] = await db.query(countQuery, params);
+
+    const [rolesResult] = await db.query('SELECT DISTINCT nom FROM roles ORDER BY nom');
+
+    const total = countResult[0]?.total || 0;
+    const totalPages = Math.ceil(total / limit);
+
+    res.status(200).json({
+      success: true,
+      data: rows,
+      count: total,
+      totalPages: totalPages,
+      currentPage: page,
+      limit: limit,
+      roles: rolesResult.map(r => r.nom).filter(n => n !== null && n !== ''),
+      pagination: {
+        total: total,
+        totalPages: totalPages,
+        currentPage: page,
+        perPage: limit,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [getUsersPaginated] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur: ' + error.message
+    });
+  }
+};
+
+// 12g. CHANGER LE STATUT D'UN UTILISATEUR (PUT)
+exports.toggleUserStatus = async (req, res) => {
+  const { id } = req.params;
+  const { active } = req.body;
+
+  try {
+    const [existing] = await db.query(
+      'SELECT a.id, acc.active FROM adherent a JOIN acces_adherent acc ON a.id = acc.adherent_id WHERE a.id = ?',
+      [id]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Utilisateur non trouvé'
+      });
+    }
+
+    const newStatus = active !== undefined ? active : !existing[0].active;
+
+    await db.query(
+      `UPDATE acces_adherent SET active = ?, updated_at = NOW() WHERE adherent_id = ?`,
+      [newStatus ? 1 : 0, id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: newStatus ? '✅ Utilisateur activé' : '✅ Utilisateur désactivé',
+      active: newStatus
+    });
+  } catch (error) {
+    console.error('❌ [toggleUserStatus] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur: ' + error.message
+    });
+  }
+};
+
 // ============================================================
-// 13. EMAIL 1 : ENVOYER LE CODE DE VÉRIFICATION
+// 13. ENVOYER LE CODE DE VÉRIFICATION (POST)
 // ============================================================
 exports.sendVerificationCode = async (req, res) => {
   const { email, whatsapp, nomPrenom } = req.body;
 
   console.log('═══════════════════════════════════════════════════');
   console.log('📧 [EMAIL 1] Envoi du code de vérification');
-  console.log('📧 [EMAIL 1] Email destinataire:', email);
-  console.log('📧 [EMAIL 1] WhatsApp:', whatsapp);
-  console.log('📧 [EMAIL 1] Nom:', nomPrenom);
+  console.log('📧 Email:', email);
+  console.log('📱 WhatsApp:', whatsapp);
+  console.log('👤 Nom:', nomPrenom);
   console.log('═══════════════════════════════════════════════════');
 
   if (!email || !email.includes('@')) {
-    console.log('❌ [EMAIL 1] Email invalide:', email);
     return res.status(400).json({
       success: false,
       error: 'Email invalide'
@@ -1442,7 +1595,7 @@ exports.sendVerificationCode = async (req, res) => {
     cleanExpiredCodes();
 
     const code = generateVerificationCode();
-    console.log('🔑 [EMAIL 1] Code généré:', code);
+    console.log('🔑 Code généré:', code);
     
     if (!global.verificationCodes) {
       global.verificationCodes = {};
@@ -1456,7 +1609,6 @@ exports.sendVerificationCode = async (req, res) => {
       attempts: 0,
       maxAttempts: 5
     };
-    console.log('💾 [EMAIL 1] Code stocké pour:', email);
 
     let emailSent = false;
 
@@ -1464,9 +1616,7 @@ exports.sendVerificationCode = async (req, res) => {
       let nodemailer;
       try {
         nodemailer = require('nodemailer');
-        console.log('📧 [EMAIL 1] Nodemailer trouvé');
       } catch (e) {
-        console.log('⚠️ [EMAIL 1] Nodemailer non installé');
         throw new Error('Nodemailer not installed');
       }
 
@@ -1474,7 +1624,6 @@ exports.sendVerificationCode = async (req, res) => {
       const emailPassword = process.env.EMAIL_PASSWORD;
       
       if (!emailUser || !emailPassword) {
-        console.log('⚠️ [EMAIL 1] Variables EMAIL_USER ou EMAIL_PASSWORD non définies');
         throw new Error('Email credentials not configured');
       }
 
@@ -1485,14 +1634,10 @@ exports.sendVerificationCode = async (req, res) => {
         auth: {
           user: emailUser,
           pass: emailPassword
-        },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
+        }
       });
 
       await transporter.verify();
-      console.log('✅ [EMAIL 1] Connexion SMTP établie avec succès');
 
       const mailOptions = {
         from: `"Académie Nafahat" <${emailUser}>`,
@@ -1500,20 +1645,17 @@ exports.sendVerificationCode = async (req, res) => {
         subject: '🔐 Code de vérification - Académie Nafahat',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
-            <div style="background: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-              <div style="text-align: center; border-bottom: 3px solid #0D443E; padding-bottom: 20px; margin-bottom: 30px;">
-                <h1 style="color: #0D443E; margin: 0;">📚 Académie Nafahat</h1>
-                <p style="color: #666; margin: 5px 0 0;">Vérification de votre inscription</p>
+            <div style="background: #ffffff; padding: 40px; border-radius: 12px;">
+              <div style="text-align: center; border-bottom: 3px solid #0D443E; padding-bottom: 20px;">
+                <h1 style="color: #0D443E;">📚 Académie Nafahat</h1>
+                <p style="color: #666;">Vérification de votre inscription</p>
               </div>
-              
               <p>Bonjour <strong>${nomPrenom}</strong>,</p>
-              <p>Merci de vous inscrire à l'Académie Nafahat. Pour finaliser votre inscription, veuillez utiliser le code de vérification ci-dessous :</p>
-              
-              <div style="background: #f0f7f6; border-radius: 12px; padding: 25px; text-align: center; margin: 30px 0; border: 2px dashed #0D443E;">
+              <p>Pour finaliser votre inscription, veuillez utiliser le code ci-dessous :</p>
+              <div style="background: #f0f7f6; border-radius: 12px; padding: 25px; text-align: center; border: 2px dashed #0D443E;">
                 <div style="font-size: 48px; font-weight: bold; color: #0D443E; letter-spacing: 8px; font-family: monospace;">${code}</div>
-                <p style="margin: 10px 0 0; color: #666; font-size: 14px;">⏱️ Ce code est valable <strong>5 minutes</strong></p>
+                <p style="margin: 10px 0 0; color: #666; font-size: 14px;">⏱️ Valable 5 minutes</p>
               </div>
-              
               <div style="background: #f9f9f9; border-radius: 8px; padding: 15px; margin: 20px 0;">
                 <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
                   <span style="color: #666;">📱 Identifiant</span>
@@ -1524,14 +1666,6 @@ exports.sendVerificationCode = async (req, res) => {
                   <span style="color: #0D443E; font-weight: 600;">${nomPrenom}</span>
                 </div>
               </div>
-              
-              <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 16px; border-radius: 4px; margin: 20px 0; font-size: 14px; color: #856404;">
-                ⚠️ Si vous n'avez pas demandé cette vérification, ignorez cet email.
-              </div>
-              
-              <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #999; font-size: 13px;">
-                <p>© 2024 Académie Nafahat - Tous droits réservés</p>
-              </div>
             </div>
           </div>
         `,
@@ -1540,10 +1674,9 @@ exports.sendVerificationCode = async (req, res) => {
 
           Bonjour ${nomPrenom},
 
-          Merci de vous inscrire à l'Académie Nafahat.
-          Voici votre code de vérification : ${code}
+          Votre code de vérification : ${code}
 
-          ⏱️ Ce code est valable 5 minutes.
+          ⏱️ Valable 5 minutes.
 
           📱 Identifiant : ${whatsapp}
           👤 Nom : ${nomPrenom}
@@ -1554,24 +1687,21 @@ exports.sendVerificationCode = async (req, res) => {
 
       await transporter.sendMail(mailOptions);
       emailSent = true;
-      console.log('✅ [EMAIL 1] Email envoyé avec succès !');
+      console.log('✅ Email envoyé avec succès !');
       
     } catch (nodemailerError) {
-      console.error('❌ [EMAIL 1] Erreur nodemailer:', nodemailerError.message);
+      console.error('❌ Erreur nodemailer:', nodemailerError.message);
     }
 
     if (!emailSent) {
       console.log('═══════════════════════════════════════════════════');
-      console.log('📧 [EMAIL 1] MODE SIMULATION');
-      console.log('📋 Code de vérification (copiez-le) :', code);
+      console.log('📧 MODE SIMULATION - Code:', code);
       console.log('═══════════════════════════════════════════════════');
     }
 
     const response = {
       success: true,
-      message: emailSent 
-        ? '✅ Code de vérification envoyé par email' 
-        : '📧 Code de vérification généré (SIMULATION)',
+      message: emailSent ? '✅ Code envoyé par email' : '📧 Code généré (SIMULATION)',
       emailSent: emailSent,
     };
 
@@ -1582,16 +1712,16 @@ exports.sendVerificationCode = async (req, res) => {
     res.status(200).json(response);
 
   } catch (error) {
-    console.error('❌ [EMAIL 1] ERREUR:', error);
+    console.error('❌ ERREUR:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors de l\'envoi du code de vérification: ' + error.message
+      error: 'Erreur lors de l\'envoi du code: ' + error.message
     });
   }
 };
 
 // ============================================================
-// 14. VALIDER LE CODE ET CRÉER L'UTILISATEUR + EMAIL 2 (SUCCÈS)
+// 14. VALIDER LE CODE ET CRÉER L'UTILISATEUR (POST)
 // ============================================================
 exports.verifyCodeAndCreateUser = async (req, res) => {
   const { email, code, adherent, enfants } = req.body;
@@ -1610,27 +1740,24 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
   try {
     cleanExpiredCodes();
 
-    // Vérification du code stocké
     if (!global.verificationCodes || !global.verificationCodes[email]) {
       return res.status(400).json({
         success: false,
-        error: 'Aucun code de vérification trouvé pour cet email. Veuillez en demander un nouveau.'
+        error: 'Aucun code trouvé. Veuillez en demander un nouveau.'
       });
     }
 
     const storedData = global.verificationCodes[email];
     const now = Date.now();
 
-    // Vérifier l'expiration (5 minutes)
     if (now - storedData.timestamp > 300000) {
       delete global.verificationCodes[email];
       return res.status(400).json({
         success: false,
-        error: 'Le code de vérification a expiré. Veuillez en demander un nouveau.'
+        error: 'Le code a expiré. Veuillez en demander un nouveau.'
       });
     }
 
-    // Vérifier le nombre de tentatives
     storedData.attempts = (storedData.attempts || 0) + 1;
     if (storedData.attempts > storedData.maxAttempts) {
       delete global.verificationCodes[email];
@@ -1640,15 +1767,13 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
       });
     }
 
-    // Vérifier le code
     if (storedData.code !== code) {
       return res.status(400).json({
         success: false,
-        error: `Code de vérification incorrect. ${storedData.maxAttempts - storedData.attempts} tentative(s) restante(s).`
+        error: `Code incorrect. ${storedData.maxAttempts - storedData.attempts} tentative(s) restante(s).`
       });
     }
 
-    // ✅ Code valide - Supprimer le code utilisé
     delete global.verificationCodes[email];
 
     const finalAdherent = adherent || {
@@ -1666,7 +1791,6 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
       accordPublication: false
     };
 
-    // Vérifier les doublons avant la création
     const errors = await checkExistingUser(finalAdherent.whatsapp, finalAdherent.email);
     
     if (errors.length > 0) {
@@ -1682,22 +1806,15 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
       });
     }
 
-    // Créer l'utilisateur
     const createResult = await createUserInDatabase(finalAdherent, enfants || []);
 
     if (createResult.success) {
-      // ============================================================
-      // 📧 EMAIL 2 : ENVOI DE L'EMAIL DE SUCCÈS AVEC IDENTIFIANTS
-      // ============================================================
-      console.log('📧 [EMAIL 2] Envoi de l\'email de succès avec identifiants...');
-      
+      // Envoyer l'email de succès
       try {
         let nodemailer;
         try {
           nodemailer = require('nodemailer');
-        } catch (e) {
-          console.log('⚠️ [EMAIL 2] Nodemailer non installé');
-        }
+        } catch (e) {}
 
         if (nodemailer) {
           const emailUser = process.env.EMAIL_USER;
@@ -1711,10 +1828,7 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
               auth: {
                 user: emailUser,
                 pass: emailPassword
-              },
-              connectionTimeout: 10000,
-              greetingTimeout: 10000,
-              socketTimeout: 10000,
+              }
             });
 
             await transporter.verify();
@@ -1733,20 +1847,13 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
               text: welcomeEmail.text,
             });
             
-            console.log('✅ [EMAIL 2] Email de succès envoyé à', finalAdherent.email);
-            console.log('   📱 Identifiant:', finalAdherent.whatsapp);
-            console.log('   🔑 Mot de passe:', createResult.motDePasse);
-          } else {
-            console.log('⚠️ [EMAIL 2] Variables EMAIL_USER ou EMAIL_PASSWORD non définies');
+            console.log('✅ Email de succès envoyé à', finalAdherent.email);
           }
         }
       } catch (emailError) {
-        console.error('❌ [EMAIL 2] Erreur envoi email de succès:', emailError.message);
+        console.error('❌ Erreur envoi email de succès:', emailError.message);
       }
 
-      // ============================================================
-      // MESSAGE WHATSAPP
-      // ============================================================
       const message = generateWhatsAppMessage(
         finalAdherent.nomPrenom,
         finalAdherent.whatsapp,
@@ -1756,15 +1863,6 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
       const cleanPhone = finalAdherent.whatsapp.replace(/[^0-9+]/g, '');
       const encodedMessage = encodeURIComponent(message);
       const waUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
-
-      console.log('═══════════════════════════════════════════════════');
-      console.log('✅ [INSCRIPTION] COMPLÈTE - Succès !');
-      console.log('   👤 Nom:', finalAdherent.nomPrenom);
-      console.log('   📱 Identifiant:', finalAdherent.whatsapp);
-      console.log('   🔑 Mot de passe:', createResult.motDePasse);
-      console.log('   📧 Email 1 (vérification): envoyé');
-      console.log('   📧 Email 2 (succès): envoyé');
-      console.log('═══════════════════════════════════════════════════');
 
       res.status(201).json({
         success: true,
@@ -1776,7 +1874,6 @@ exports.verifyCodeAndCreateUser = async (req, res) => {
           identifiant: finalAdherent.whatsapp,
           motDePasse: createResult.motDePasse,
         },
-        emailSent: true, // Indique que l'email 2 a été envoyé
       });
     } else {
       throw new Error(createResult.error || 'Erreur lors de la création du compte');
@@ -1855,168 +1952,406 @@ exports.changePassword = async (req, res) => {
     });
   }
 };
-// ============================================================
-// 12. GESTION DES UTILISATEURS (SUPER ADMIN) - AVEC PAGINATION
-// ============================================================
 
-// 12b. LISTE DES UTILISATEURS AVEC PAGINATION, RECHERCHE, TRI, FILTRES (GET)
-exports.getUsersPaginated = async (req, res) => {
+// ============================================================
+// 16. DEMANDE DE RÉINITIALISATION DU MOT DE PASSE (POST)
+// ✅ ADAPTÉ POUR UTILISER BASE_URL DYNAMIQUEMENT
+// ============================================================
+exports.requestPasswordReset = async (req, res) => {
+  const { email } = req.body;
+
+  console.log('═══════════════════════════════════════════════════');
+  console.log('🔑 [RESET PASSWORD] Demande de réinitialisation');
+  console.log('📧 Email:', email);
+  console.log('═══════════════════════════════════════════════════');
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({
+      success: false,
+      error: 'Veuillez fournir un email valide'
+    });
+  }
+
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const offset = (page - 1) * limit;
-    const search = req.query.search || '';
-    const role = req.query.role || 'tous';
-    const sort = req.query.sort || 'id';
-    const order = req.query.order || 'desc';
+    const [users] = await db.query(
+      'SELECT id, whatsapp, nom_prenom FROM adherent WHERE email = ?',
+      [email]
+    );
 
-    // Construction de la requête
-    let whereClause = '1=1';
-    const params = [];
-
-    // Recherche
-    if (search.trim() !== '') {
-      whereClause += ` AND (a.nom_prenom LIKE ? OR a.whatsapp LIKE ? OR a.email LIKE ?)`;
-      const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Aucun compte trouvé avec cet email'
+      });
     }
 
-    // Filtre par rôle
-    if (role !== 'tous') {
-      whereClause += ` AND r.nom = ?`;
-      params.push(role);
-    }
+    const user = users[0];
+    
+    const resetToken = generateVerificationCode();
+    const tokenExpiry = Date.now() + 3600000;
 
-    // Mapping des colonnes de tri
-    const sortMapping = {
-      'id': 'a.id',
-      'nom_prenom': 'a.nom_prenom',
-      'role_libelle': 'r.libelle',
-      'whatsapp': 'a.whatsapp',
-      'email': 'a.email',
+    if (!global.resetTokens) {
+      global.resetTokens = {};
+    }
+    
+    global.resetTokens[resetToken] = {
+      userId: user.id,
+      email: email,
+      whatsapp: user.whatsapp,
+      nomPrenom: user.nom_prenom,
+      timestamp: Date.now(),
+      expiresAt: tokenExpiry,
+      used: false
     };
-    const sortColumn = sortMapping[sort] || 'a.id';
-    const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    // Requête principale
-    const query = `
-      SELECT 
-        a.id,
-        a.whatsapp,
-        a.nom_prenom,
-        a.email,
-        a.pays,
-        a.ville,
-        a.accord_publication,
-        a.created_at as date_inscription,
-        r.id as role_id,
-        r.nom as role_nom,
-        r.libelle as role_libelle,
-        acc.mot_de_passe,
-        acc.active
-      FROM adherent a
-      JOIN acces_adherent acc ON a.id = acc.adherent_id
-      LEFT JOIN roles r ON acc.role_id = r.id
-      WHERE ${whereClause}
-      ORDER BY ${sortColumn} ${sortOrder}
-      LIMIT ? OFFSET ?
-    `;
+    cleanExpiredResetTokens();
 
-    // Requête pour le comptage total
-    const countQuery = `
-      SELECT COUNT(*) as total
-      FROM adherent a
-      JOIN acces_adherent acc ON a.id = acc.adherent_id
-      LEFT JOIN roles r ON acc.role_id = r.id
-      WHERE ${whereClause}
-    `;
+    console.log('🔑 Token généré:', resetToken);
+    console.log('👤 Utilisateur:', user.nom_prenom);
 
-    const paramsWithPagination = [...params, limit, offset];
+    // ============================================================
+    // ✅ CONSTRUCTION DYNAMIQUE DE L'URL AVEC BASE_URL
+    // ============================================================
+    
+    // 1. Déterminer l'environnement
+    const isProduction = process.env.NODE_ENV === 'production' || 
+                         process.env.BASE_URL === 'https://www.nafahat-academy.com';
+    
+    // 2. Récupérer l'URL de base depuis le .env
+    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    
+    // 3. Nettoyer l'URL
+    const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+    
+    // 4. Construire le lien complet
+    const resetLink = `${cleanBaseUrl}/reset-password?token=${resetToken}`;
+    
+    console.log(`🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
+    console.log(`🔗 URL de base: ${cleanBaseUrl}`);
+    console.log(`🔗 Lien de réinitialisation: ${resetLink}`);
 
-    console.log('📝 [getUsersPaginated] Requête:', query);
-    console.log('📝 [getUsersPaginated] Paramètres:', paramsWithPagination);
+    let emailSent = false;
 
-    const [rows] = await db.query(query, paramsWithPagination);
-    const [countResult] = await db.query(countQuery, params);
+    try {
+      let nodemailer;
+      try {
+        nodemailer = require('nodemailer');
+      } catch (e) {
+        console.log('⚠️ Nodemailer non installé');
+      }
 
-    // Récupérer la liste des rôles disponibles
-    const [rolesResult] = await db.query('SELECT DISTINCT nom FROM roles ORDER BY nom');
+      if (nodemailer) {
+        const emailUser = process.env.EMAIL_USER;
+        const emailPassword = process.env.EMAIL_PASSWORD;
+        
+        if (emailUser && emailPassword) {
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port: parseInt(process.env.SMTP_PORT || '587'),
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: {
+              user: emailUser,
+              pass: emailPassword
+            }
+          });
 
-    const total = countResult[0]?.total || 0;
-    const totalPages = Math.ceil(total / limit);
+          await transporter.verify();
+
+          const mailOptions = {
+            from: `"Académie Nafahat" <${emailUser}>`,
+            to: email,
+            subject: '🔑 Réinitialisation de votre mot de passe - Académie Nafahat',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: #0D443E; padding: 20px; text-align: center; color: white; border-radius: 12px 12px 0 0;">
+                  <h1>🔑 Réinitialisation du mot de passe</h1>
+                  <p style="margin: 5px 0 0; opacity: 0.9;">Académie Nafahat</p>
+                </div>
+                <div style="background: #f5f5f5; padding: 30px; border-radius: 0 0 12px 12px;">
+                  <h2>👋 Bonjour ${user.nom_prenom},</h2>
+                  
+                  <p>Nous avons reçu une demande de réinitialisation de votre mot de passe pour votre compte <strong>Académie Nafahat</strong>.</p>
+                  
+                  <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #43a047;">
+                    <strong>📱 Identifiant :</strong> ${user.whatsapp}
+                  </div>
+                  
+                  <p>Pour réinitialiser votre mot de passe, cliquez sur le bouton ci-dessous :</p>
+                  
+                  <div style="text-align: center; margin: 30px 0;">
+                    <a href="${resetLink}" style="background: #0D443E; color: white; padding: 14px 35px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">🔐 Réinitialiser mon mot de passe</a>
+                  </div>
+                  
+                  <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                    <p style="margin: 0; font-size: 14px;">
+                      <strong>⏱️ Ce lien est valable 1 heure.</strong>
+                    </p>
+                    <p style="margin: 10px 0 0; font-size: 14px;">
+                      Si vous n'avez pas demandé cette réinitialisation, ignorez simplement cet email.
+                    </p>
+                  </div>
+                  
+                  <p style="font-size: 12px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 20px;">
+                    © 2024 Académie Nafahat - Tous droits réservés<br>
+                    Cet email a été envoyé automatiquement suite à votre demande.
+                  </p>
+                </div>
+              </div>
+            `,
+            text: `
+              🔑 Réinitialisation de votre mot de passe - Académie Nafahat
+
+              Bonjour ${user.nom_prenom},
+
+              Nous avons reçu une demande de réinitialisation de votre mot de passe pour votre compte Académie Nafahat.
+
+              📱 Identifiant : ${user.whatsapp}
+
+              Pour réinitialiser votre mot de passe, cliquez sur le lien suivant :
+              ${resetLink}
+
+              ⏱️ Ce lien est valable 1 heure.
+
+              Si vous n'avez pas demandé cette réinitialisation, ignorez simplement cet email.
+
+              © 2024 Académie Nafahat
+            `
+          };
+
+          await transporter.sendMail(mailOptions);
+          emailSent = true;
+          console.log('✅ Email de réinitialisation envoyé à', email);
+          console.log(`   🔗 Lien: ${resetLink}`);
+        } else {
+          console.log('⚠️ Variables EMAIL_USER ou EMAIL_PASSWORD non définies');
+        }
+      }
+    } catch (emailError) {
+      console.error('❌ Erreur envoi email:', emailError.message);
+    }
+
+    if (!emailSent) {
+      console.log('═══════════════════════════════════════════════════');
+      console.log('📧 MODE SIMULATION - Lien de réinitialisation :');
+      console.log(resetLink);
+      console.log('═══════════════════════════════════════════════════');
+    }
 
     res.status(200).json({
       success: true,
-      data: rows,
-      count: total,
-      totalPages: totalPages,
-      currentPage: page,
-      limit: limit,
-      roles: rolesResult.map(r => r.nom).filter(n => n !== null && n !== ''),
-      pagination: {
-        total: total,
-        totalPages: totalPages,
-        currentPage: page,
-        perPage: limit,
-        hasNext: page < totalPages,
-        hasPrev: page > 1,
-      }
+      message: emailSent 
+        ? '✅ Un email de réinitialisation vous a été envoyé' 
+        : '📧 Lien de réinitialisation généré (SIMULATION)',
+      emailSent: emailSent,
+      token: process.env.NODE_ENV === 'development' ? resetToken : undefined
     });
 
   } catch (error) {
-    console.error('❌ [getUsersPaginated] Erreur:', error);
+    console.error('❌ [requestPasswordReset] Erreur:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur serveur: ' + error.message
+      error: 'Erreur lors de la demande de réinitialisation: ' + error.message
     });
   }
 };
 
 // ============================================================
-// 12c. UTILISATEUR PAR ID (GET)
+// 17. VALIDER LE TOKEN ET RÉINITIALISER LE MOT DE PASSE (POST)
 // ============================================================
-exports.getUserById = async (req, res) => {
-  const { id } = req.params;
+exports.resetPasswordWithToken = async (req, res) => {
+  const { token, whatsapp, newPassword } = req.body;
+
+  console.log('═══════════════════════════════════════════════════');
+  console.log('🔑 [RESET PASSWORD] Validation du token');
+  console.log('📝 Token:', token);
+  console.log('📱 WhatsApp:', whatsapp);
+  console.log('═══════════════════════════════════════════════════');
+
+  if (!token || !whatsapp || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      error: 'Token, WhatsApp et nouveau mot de passe requis'
+    });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      error: 'Le nouveau mot de passe doit contenir au moins 6 caractères'
+    });
+  }
 
   try {
-    const [rows] = await db.query(
-      `SELECT 
-        a.id,
-        a.whatsapp,
-        a.nom_prenom,
-        a.email,
-        a.pays,
-        a.ville,
-        a.date_naissance,
-        a.genre,
-        a.accord_publication,
-        a.created_at,
-        a.updated_at,
-        r.id as role_id,
-        r.nom as role_nom,
-        r.libelle as role_libelle,
-        acc.mot_de_passe,
-        acc.active
-       FROM adherent a
-       JOIN acces_adherent acc ON a.id = acc.adherent_id
-       LEFT JOIN roles r ON acc.role_id = r.id
-       WHERE a.id = ?`,
-      [id]
+    cleanExpiredResetTokens();
+
+    if (!global.resetTokens || !global.resetTokens[token]) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token invalide ou expiré. Veuillez faire une nouvelle demande.'
+      });
+    }
+
+    const resetData = global.resetTokens[token];
+
+    if (resetData.used) {
+      delete global.resetTokens[token];
+      return res.status(400).json({
+        success: false,
+        error: 'Ce token a déjà été utilisé. Veuillez faire une nouvelle demande.'
+      });
+    }
+
+    if (Date.now() > resetData.expiresAt) {
+      delete global.resetTokens[token];
+      return res.status(400).json({
+        success: false,
+        error: 'Le token a expiré. Veuillez faire une nouvelle demande.'
+      });
+    }
+
+    if (resetData.whatsapp !== whatsapp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Le numéro WhatsApp ne correspond pas à la demande de réinitialisation.'
+      });
+    }
+
+    await db.query(
+      'UPDATE acces_adherent SET mot_de_passe = ?, updated_at = NOW() WHERE adherent_id = ?',
+      [newPassword, resetData.userId]
     );
 
-    if (rows.length === 0) {
-      return res.status(404).json({
+    resetData.used = true;
+    global.resetTokens[token] = resetData;
+
+    console.log('✅ Mot de passe réinitialisé pour l\'utilisateur:', resetData.userId);
+
+    // Envoyer un email de confirmation
+    try {
+      let nodemailer;
+      try {
+        nodemailer = require('nodemailer');
+      } catch (e) {}
+
+      if (nodemailer) {
+        const emailUser = process.env.EMAIL_USER;
+        const emailPassword = process.env.EMAIL_PASSWORD;
+        
+        if (emailUser && emailPassword) {
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port: parseInt(process.env.SMTP_PORT || '587'),
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: {
+              user: emailUser,
+              pass: emailPassword
+            }
+          });
+
+          await transporter.sendMail({
+            from: `"Académie Nafahat" <${emailUser}>`,
+            to: resetData.email,
+            subject: '✅ Mot de passe réinitialisé - Académie Nafahat',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: #0D443E; padding: 20px; text-align: center; color: white; border-radius: 12px 12px 0 0;">
+                  <h1>✅ Mot de passe réinitialisé</h1>
+                </div>
+                <div style="background: #f5f5f5; padding: 30px; border-radius: 0 0 12px 12px;">
+                  <h2>Bonjour ${resetData.nomPrenom},</h2>
+                  <p>Votre mot de passe a été réinitialisé avec succès.</p>
+                  <p>Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.</p>
+                  <div style="text-align: center; margin: 20px 0;">
+                    <a href="${process.env.BASE_URL || 'https://nafahat.com'}/connexion" style="background: #0D443E; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px;">Se connecter</a>
+                  </div>
+                </div>
+              </div>
+            `,
+            text: `
+              ✅ Mot de passe réinitialisé
+
+              Bonjour ${resetData.nomPrenom},
+
+              Votre mot de passe a été réinitialisé avec succès.
+              Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.
+
+              Se connecter : ${process.env.BASE_URL || 'https://nafahat.com'}/connexion
+            `
+          });
+          console.log('✅ Email de confirmation envoyé');
+        }
+      }
+    } catch (emailError) {
+      console.error('❌ Erreur envoi email confirmation:', emailError.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: '✅ Mot de passe réinitialisé avec succès. Vous pouvez maintenant vous connecter.',
+      userId: resetData.userId
+    });
+
+  } catch (error) {
+    console.error('❌ [resetPasswordWithToken] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de la réinitialisation: ' + error.message
+    });
+  }
+};
+
+// ============================================================
+// 18. VÉRIFIER LA VALIDITÉ D'UN TOKEN (GET)
+// ============================================================
+exports.verifyResetToken = async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      error: 'Token requis'
+    });
+  }
+
+  try {
+    cleanExpiredResetTokens();
+
+    if (!global.resetTokens || !global.resetTokens[token]) {
+      return res.status(400).json({
         success: false,
-        error: 'Utilisateur non trouvé'
+        valid: false,
+        error: 'Token invalide ou expiré'
+      });
+    }
+
+    const resetData = global.resetTokens[token];
+
+    if (resetData.used) {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        error: 'Ce token a déjà été utilisé'
+      });
+    }
+
+    if (Date.now() > resetData.expiresAt) {
+      delete global.resetTokens[token];
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        error: 'Le token a expiré'
       });
     }
 
     res.status(200).json({
       success: true,
-      data: rows[0]
+      valid: true,
+      whatsapp: resetData.whatsapp,
+      email: resetData.email
     });
+
   } catch (error) {
-    console.error('❌ [getUserById] Erreur:', error);
+    console.error('❌ [verifyResetToken] Erreur:', error);
     res.status(500).json({
       success: false,
       error: 'Erreur serveur'
@@ -2025,105 +2360,6 @@ exports.getUserById = async (req, res) => {
 };
 
 // ============================================================
-// 12d. CHANGER LE STATUT D'UN UTILISATEUR (PUT)
+// EXPORTATION DES FONCTIONS
 // ============================================================
-exports.toggleUserStatus = async (req, res) => {
-  const { id } = req.params;
-  const { active } = req.body;
-
-  try {
-    // Vérifier que l'utilisateur existe
-    const [existing] = await db.query(
-      'SELECT a.id, acc.active FROM adherent a JOIN acces_adherent acc ON a.id = acc.adherent_id WHERE a.id = ?',
-      [id]
-    );
-
-    if (existing.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Utilisateur non trouvé'
-      });
-    }
-
-    const newStatus = active !== undefined ? active : !existing[0].active;
-
-    await db.query(
-      `UPDATE acces_adherent SET active = ?, updated_at = NOW() WHERE adherent_id = ?`,
-      [newStatus ? 1 : 0, id]
-    );
-
-    res.status(200).json({
-      success: true,
-      message: newStatus ? '✅ Utilisateur activé' : '✅ Utilisateur désactivé',
-      active: newStatus
-    });
-  } catch (error) {
-    console.error('❌ [toggleUserStatus] Erreur:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erreur serveur: ' + error.message
-    });
-  }
-};
-
-// ============================================================
-// 12e. SUPPRIMER UN UTILISATEUR (DELETE)
-// ============================================================
-exports.deleteUser = async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const connection = await db.pool.getConnection();
-
-    try {
-      await connection.beginTransaction();
-
-      // Supprimer d'abord les enfants
-      await connection.query(
-        'DELETE FROM enfant WHERE adherent_id = ?',
-        [id]
-      );
-
-      // Supprimer l'accès
-      await connection.query(
-        'DELETE FROM acces_adherent WHERE adherent_id = ?',
-        [id]
-      );
-
-      // Supprimer l'adhérent
-      const [result] = await connection.query(
-        'DELETE FROM adherent WHERE id = ?',
-        [id]
-      );
-
-      if (result.affectedRows === 0) {
-        await connection.rollback();
-        return res.status(404).json({
-          success: false,
-          error: 'Utilisateur non trouvé'
-        });
-      }
-
-      await connection.commit();
-
-      res.status(200).json({
-        success: true,
-        message: '✅ Utilisateur supprimé avec succès'
-      });
-
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
-  } catch (error) {
-    console.error('❌ [deleteUser] Erreur:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erreur serveur: ' + error.message
-    });
-  }
-};
-
 module.exports = exports;

@@ -47,6 +47,16 @@ router.put('/users/:id', adherentController.updateUser);
 router.delete('/users/:id', adherentController.deleteUser);
 
 // ============================================================
+// ✅ ROUTES DE RÉINITIALISATION DU MOT DE PASSE
+// ⚠️ DOIVENT rester déclarées AVANT les routes paramétrées /:id
+// ci-dessous, sinon Express fait matcher '/verify-reset-token' etc.
+// avec '/:id' (id = "verify-reset-token") avant d'atteindre ces routes.
+// ============================================================
+router.post('/request-password-reset', adherentController.requestPasswordReset);
+router.post('/reset-password-with-token', adherentController.resetPasswordWithToken);
+router.get('/verify-reset-token', adherentController.verifyResetToken);
+
+// ============================================================
 // 7. ROUTES AVEC PARAMÈTRES ID (ADHÉRENTS)
 // ============================================================
 router.get('/', adherentController.getAdherents);
@@ -99,7 +109,6 @@ exports.changePassword = async (req, res) => {
     });
   }
 };
-
 // ============================================================
 // EXPORTATION DU ROUTEUR
 // ============================================================
