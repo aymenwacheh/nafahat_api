@@ -282,14 +282,10 @@ async function createUserInDatabase(adherent, enfants) {
 // FONCTION UTILITAIRE : Obtenir l'URL de base du frontend
 // ============================================================
 function getFrontendUrl() {
-  // 1. Vérifier si on est en production
   const isProduction = process.env.NODE_ENV === 'production' || 
                        process.env.BASE_URL === 'https://www.nafahat-academy.com';
   
-  // 2. Utiliser BASE_URL du .env
   const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-  
-  // 3. Nettoyer l'URL (supprimer les slashes en trop)
   const cleanUrl = baseUrl.replace(/\/+$/, '');
   
   console.log(`🌍 [getFrontendUrl] Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
@@ -1955,7 +1951,6 @@ exports.changePassword = async (req, res) => {
 
 // ============================================================
 // 16. DEMANDE DE RÉINITIALISATION DU MOT DE PASSE (POST)
-// ✅ ADAPTÉ POUR UTILISER BASE_URL DYNAMIQUEMENT
 // ============================================================
 exports.requestPasswordReset = async (req, res) => {
   const { email } = req.body;
@@ -2009,25 +2004,9 @@ exports.requestPasswordReset = async (req, res) => {
     console.log('🔑 Token généré:', resetToken);
     console.log('👤 Utilisateur:', user.nom_prenom);
 
-    // ============================================================
-    // ✅ CONSTRUCTION DYNAMIQUE DE L'URL AVEC BASE_URL
-    // ============================================================
+    const baseUrl = getFrontendUrl();
+    const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
     
-    // 1. Déterminer l'environnement
-    const isProduction = process.env.NODE_ENV === 'production' || 
-                         process.env.BASE_URL === 'https://www.nafahat-academy.com';
-    
-    // 2. Récupérer l'URL de base depuis le .env
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-    
-    // 3. Nettoyer l'URL
-    const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
-    
-    // 4. Construire le lien complet
-    const resetLink = `${cleanBaseUrl}/reset-password?token=${resetToken}`;
-    
-    console.log(`🌍 Environnement: ${isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT'}`);
-    console.log(`🔗 URL de base: ${cleanBaseUrl}`);
     console.log(`🔗 Lien de réinitialisation: ${resetLink}`);
 
     let emailSent = false;
@@ -2352,6 +2331,143 @@ exports.verifyResetToken = async (req, res) => {
 
   } catch (error) {
     console.error('❌ [verifyResetToken] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  }
+};
+
+// ============================================================
+// 19. RÉINITIALISATION DIRECTE DU MOT DE PASSE (POST)
+// ============================================================
+exports.resetPasswordDirect = async (req, res) => {
+  const { email, newPassword } = req.body;
+
+  console.log('═══════════════════════════════════════════════════');
+  console.log('🔑 [RESET PASSWORD DIRECT] Réinitialisation directe');
+  console.log('📧 Email:', email);
+  console.log('═══════════════════════════════════════════════════');
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({
+      success: false,
+      error: 'Veuillez fournir un email valide'
+    });
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      error: 'Le mot de passe doit contenir au moins 6 caractères'
+    });
+  }
+
+  try {
+    // 1. Vérifier si l'utilisateur existe avec cet email
+    const [users] = await db.query(
+      'SELECT id, nom_prenom, whatsapp, email FROM adherent WHERE email = ?',
+      [email]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Aucun compte trouvé avec cet email'
+      });
+    }
+
+    const user = users[0];
+
+    // 2. Mettre à jour le mot de passe
+    await db.query(
+      'UPDATE acces_adherent SET mot_de_passe = ?, updated_at = NOW() WHERE adherent_id = ?',
+      [newPassword, user.id]
+    );
+
+    console.log('✅ Mot de passe réinitialisé pour l\'utilisateur:', user.id);
+
+    // 3. Récupérer les informations de connexion pour la réponse
+    const [userData] = await db.query(
+      `SELECT 
+        a.id, 
+        a.whatsapp, 
+        a.nom_prenom, 
+        a.email, 
+        a.pays, 
+        a.ville,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle
+       FROM adherent a
+       JOIN acces_adherent acc ON a.id = acc.adherent_id
+       LEFT JOIN roles r ON acc.role_id = r.id
+       WHERE a.id = ?`,
+      [user.id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: '✅ Mot de passe réinitialisé avec succès',
+      userId: user.id,
+      data: userData[0]
+    });
+
+  } catch (error) {
+    console.error('❌ [resetPasswordDirect] Erreur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de la réinitialisation: ' + error.message
+    });
+  }
+};
+
+// ============================================================
+// 20. RÉCUPÉRER UN UTILISATEUR PAR EMAIL (GET)
+// ============================================================
+exports.getUserByEmail = async (req, res) => {
+  const { email } = req.query;
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({
+      success: false,
+      error: 'Email invalide'
+    });
+  }
+
+  try {
+    const [users] = await db.query(
+      `SELECT 
+        a.id, 
+        a.whatsapp, 
+        a.nom_prenom, 
+        a.email, 
+        a.pays, 
+        a.ville,
+        r.id as role_id,
+        r.nom as role_nom,
+        r.libelle as role_libelle
+       FROM adherent a
+       JOIN acces_adherent acc ON a.id = acc.adherent_id
+       LEFT JOIN roles r ON acc.role_id = r.id
+       WHERE a.email = ?`,
+      [email]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Aucun compte trouvé avec cet email'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: users[0]
+    });
+
+  } catch (error) {
+    console.error('❌ [getUserByEmail] Erreur:', error);
     res.status(500).json({
       success: false,
       error: 'Erreur serveur'

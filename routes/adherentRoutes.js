@@ -24,7 +24,7 @@ router.get('/check-whatsapp', adherentController.checkWhatsapp);
 router.get('/check-email', adherentController.checkEmail);
 
 // ============================================================
-// 4. ✅ NOUVELLES ROUTES - VÉRIFICATION PAR EMAIL
+// 4. ROUTES - VÉRIFICATION PAR EMAIL
 // ============================================================
 // Envoyer le code de vérification par email
 router.post('/send-verification-code', adherentController.sendVerificationCode);
@@ -47,10 +47,15 @@ router.put('/users/:id', adherentController.updateUser);
 router.delete('/users/:id', adherentController.deleteUser);
 
 // ============================================================
-// ✅ ROUTES DE RÉINITIALISATION DU MOT DE PASSE
+// ✅ ROUTES DE RÉINITIALISATION DIRECTE (SANS EMAIL)
 // ⚠️ DOIVENT rester déclarées AVANT les routes paramétrées /:id
-// ci-dessous, sinon Express fait matcher '/verify-reset-token' etc.
-// avec '/:id' (id = "verify-reset-token") avant d'atteindre ces routes.
+// ============================================================
+router.post('/reset-password-direct', adherentController.resetPasswordDirect);
+router.get('/by-email', adherentController.getUserByEmail);
+
+// ============================================================
+// ✅ ROUTES DE RÉINITIALISATION DU MOT DE PASSE AVEC TOKEN
+// ⚠️ DOIVENT rester déclarées AVANT les routes paramétrées /:id
 // ============================================================
 router.post('/request-password-reset', adherentController.requestPasswordReset);
 router.post('/reset-password-with-token', adherentController.resetPasswordWithToken);
@@ -58,6 +63,7 @@ router.get('/verify-reset-token', adherentController.verifyResetToken);
 
 // ============================================================
 // 7. ROUTES AVEC PARAMÈTRES ID (ADHÉRENTS)
+// ⚠️ Ces routes doivent être déclarées APRÈS les routes fixes
 // ============================================================
 router.get('/', adherentController.getAdherents);
 router.get('/:id', adherentController.getAdherentById);
@@ -65,50 +71,8 @@ router.get('/:id/credentials', adherentController.getAdherentCredentials);
 router.put('/:id', adherentController.updateAdherent);
 router.delete('/:id', adherentController.deleteAdherent);
 router.post('/:id/reset-password', adherentController.resetPassword);
-
-// ============================================================
-// verif nouveau mp
-// ============================================================
-
 router.post('/:id/change-password', adherentController.changePassword);
 
-// controllers/adherentController.js
-exports.changePassword = async (req, res) => {
-  const { id } = req.params;
-  const { currentPassword, newPassword } = req.body;
-  
-  try {
-    // Vérifier que l'utilisateur existe
-    const [user] = await db.query(
-      'SELECT id FROM acces_adherent WHERE adherent_id = ? AND mot_de_passe = ?',
-      [id, currentPassword]
-    );
-    
-    if (user.length === 0) {
-      return res.status(401).json({
-        success: false,
-        error: 'Mot de passe actuel incorrect'
-      });
-    }
-    
-    // Mettre à jour le mot de passe
-    await db.query(
-      'UPDATE acces_adherent SET mot_de_passe = ? WHERE adherent_id = ?',
-      [newPassword, id]
-    );
-    
-    res.status(200).json({
-      success: true,
-      message: 'Mot de passe mis à jour avec succès'
-    });
-  } catch (error) {
-    console.error('❌ changePassword:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erreur serveur'
-    });
-  }
-};
 // ============================================================
 // EXPORTATION DU ROUTEUR
 // ============================================================
