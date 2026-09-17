@@ -100,6 +100,8 @@ class PaymentController {
         montant_a_payer: prix,
         nombre_mois: 1,
         montant_mensuel: null,
+        nombre_periodes: 1,
+        montant_par_periode: null,
         paiements_effectues: 0,
       });
 
@@ -123,7 +125,7 @@ class PaymentController {
   }
 
   // ============================================================
-  // CONFIRMER UN PAIEMENT (avec type de paiement)
+  // ✅ CONFIRMER UN PAIEMENT (avec type de paiement généralisé)
   // POST /api/payments/confirm
   // ============================================================
   
@@ -132,14 +134,23 @@ class PaymentController {
       const {
         paymentId,
         modalite,
+        type_paiement,           // formation, mois, semaine, trimestre, annee, seance
+        montant_a_payer,         // Montant échéance
+        nombre_mois,             // (compat) Nombre de mois
+        montant_mensuel,         // (compat) Montant mensuel
+        nombre_periodes,         // ✅ NOUVEAU : Nombre de périodes (générique)
+        montant_par_periode,     // ✅ NOUVEAU : Montant par période
+      } = req.body;
+
+      console.log('🔵 [confirmPayment] Confirmation:', {
+        paymentId,
+        modalite,
         type_paiement,
         montant_a_payer,
         nombre_mois,
         montant_mensuel,
-      } = req.body;
-
-      console.log('🔵 [confirmPayment] Confirmation:', {
-        paymentId, modalite, type_paiement, montant_a_payer, nombre_mois, montant_mensuel,
+        nombre_periodes,
+        montant_par_periode,
       });
 
       if (!paymentId || !modalite) {
@@ -149,6 +160,7 @@ class PaymentController {
         });
       }
 
+      // Validation modalité
       const validModalites = ['bancaire', 'postal', 'en_ligne'];
       if (!validModalites.includes(modalite)) {
         return res.status(400).json({
@@ -157,11 +169,12 @@ class PaymentController {
         });
       }
 
-      const validTypes = ['mois', 'formation'];
+      // ✅ Validation du type de paiement (6 types)
+      const validTypes = Paiement.getValidTypes();
       if (type_paiement && !validTypes.includes(type_paiement)) {
         return res.status(400).json({
           success: false,
-          message: 'Type de paiement invalide. Valeurs acceptées: mois, formation',
+          message: `Type de paiement invalide. Valeurs acceptées: ${validTypes.join(', ')}`,
         });
       }
 
@@ -170,13 +183,26 @@ class PaymentController {
         return res.status(404).json({ success: false, message: 'Paiement non trouvé' });
       }
 
+      // ✅ Déterminer les valeurs à utiliser
+      // Priorité aux nouveaux champs (nombre_periodes, montant_par_periode)
+      // Fallback aux anciens (nombre_mois, montant_mensuel) pour compat
+      const typePaiementFinal = type_paiement || 'formation';
+      const nombrePeriodesFinal = nombre_periodes || nombre_mois || 1;
+      const montantParPeriodeFinal = montant_par_periode || montant_mensuel || null;
+
+      console.log('📊 [confirmPayment] Valeurs finales:');
+      console.log('   - type:', typePaiementFinal);
+      console.log('   - nombre périodes:', nombrePeriodesFinal);
+      console.log('   - montant/période:', montantParPeriodeFinal);
+
+      // ✅ Appel de la méthode généralisée
       const updated = await Paiement.updateModaliteWithType(
         paymentId,
         modalite,
-        type_paiement || 'formation',
+        typePaiementFinal,
         montant_a_payer,
-        nombre_mois || 1,
-        montant_mensuel
+        nombrePeriodesFinal,
+        montantParPeriodeFinal
       );
 
       if (updated) {
@@ -195,6 +221,10 @@ class PaymentController {
             nombre_mois: updatedPayment.nombre_mois,
             montant_mensuel: updatedPayment.montant_mensuel
               ? parseFloat(updatedPayment.montant_mensuel)
+              : null,
+            nombre_periodes: updatedPayment.nombre_periodes,
+            montant_par_periode: updatedPayment.montant_par_periode
+              ? parseFloat(updatedPayment.montant_par_periode)
               : null,
             montant_restant: parseFloat(updatedPayment.montant_restant) || 0,
           },
@@ -215,7 +245,7 @@ class PaymentController {
   }
 
   // ============================================================
-  // ✅ NOUVELLE ROUTE : Soumettre une tranche mensuelle
+  // ✅ SOUMETTRE UNE TRANCHE PÉRIODIQUE
   // POST /api/payments/:paymentId/tranche
   // ============================================================
   
@@ -261,7 +291,7 @@ class PaymentController {
   }
 
   // ============================================================
-  // ✅ NOUVELLE ROUTE : Upload quittance de tranche
+  // ✅ UPLOAD QUITTANCE DE TRANCHE
   // POST /api/payments/:paymentId/upload-tranche
   // ============================================================
   
@@ -315,7 +345,7 @@ class PaymentController {
   }
 
   // ============================================================
-  // ✅ NOUVELLE ROUTE : Valider une tranche manuellement (admin)
+  // ✅ VALIDER UNE TRANCHE MANUELLEMENT (admin)
   // POST /api/payments/:paymentId/valider-tranche
   // ============================================================
   
@@ -476,7 +506,8 @@ class PaymentController {
   }
 
   // ============================================================
-  // METTRE À JOUR LE STATUT (admin)
+  // ✅ METTRE À JOUR LE STATUT (admin)
+  // Gère maintenant TOUS les types périodiques
   // ============================================================
   
   static async updateStatus(req, res) {
@@ -501,10 +532,14 @@ class PaymentController {
       // ✅ Si valide → valider automatiquement la tranche en attente
       if (statut === 'valide') {
         const paiement = await Paiement.getById(paymentId);
-        if (paiement && paiement.tranche_en_attente > 0) {
+        const aTrancheEnAttente =
+          paiement && (parseFloat(paiement.tranche_en_attente) || 0) > 0;
+
+        if (aTrancheEnAttente) {
           const result = await Paiement.validerTranche(paymentId);
           if (result.success) {
             console.log('✅ [updateStatus] Tranche validée automatiquement');
+            console.log('   Type:', result.data.type_paiement);
           }
         }
       }
@@ -512,7 +547,10 @@ class PaymentController {
       // ✅ Si refusé → vider la tranche en attente
       if (statut === 'refuse') {
         const paiement = await Paiement.getById(paymentId);
-        if (paiement && paiement.tranche_en_attente > 0) {
+        const aTrancheEnAttente =
+          paiement && (parseFloat(paiement.tranche_en_attente) || 0) > 0;
+
+        if (aTrancheEnAttente) {
           await Paiement.refuserTranche(paymentId, commentaire);
           console.log('✅ [updateStatus] Tranche refusée');
         }
@@ -551,6 +589,37 @@ class PaymentController {
       return res.status(200).json({ success: true, data: payment });
     } catch (error) {
       console.error('❌ [getPaymentById] Erreur:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erreur: ' + error.message,
+      });
+    }
+  }
+
+  // ============================================================
+  // ✅ NOUVELLE ROUTE : Récupérer les types de paiement disponibles
+  // GET /api/payments/types
+  // ============================================================
+  
+  static async getPaymentTypes(req, res) {
+    try {
+      const types = Paiement.getValidTypes();
+      const configs = types.map(type => {
+        const config = Paiement.getTypeConfig(type);
+        return {
+          value: type,
+          labelFr: config.labelFr,
+          labelAr: config.labelAr,
+          isPeriodic: config.isPeriodic,
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: configs,
+      });
+    } catch (error) {
+      console.error('❌ [getPaymentTypes] Erreur:', error);
       return res.status(500).json({
         success: false,
         message: 'Erreur: ' + error.message,

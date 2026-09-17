@@ -17,6 +17,9 @@ router.get('/user/:userId', PaymentController.getUserPayments);
 router.get('/formation/:formationId', PaymentController.getFormationPayments);
 router.get('/stats', PaymentController.getStats);
 
+// ✅ NOUVELLE : Récupérer les types de paiement disponibles
+router.get('/types', PaymentController.getPaymentTypes);
+
 // Mettre à jour statut
 router.put('/status/:paymentId', PaymentController.updateStatus);
 

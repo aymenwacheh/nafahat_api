@@ -4,6 +4,119 @@ const db = require('../config/database');
 class Paiement {
 
   // ============================================================
+  // ✅ CONFIGURATION DES TYPES DE PAIEMENT PÉRIODIQUE
+  // ============================================================
+   // ============================================================
+  // ✅ CONFIGURATION DES TYPES DE PAIEMENT PÉRIODIQUE
+  // ============================================================
+  
+  /**
+   * Retourne la configuration d'un type de paiement
+   */
+  static getTypeConfig(typePaiement) {
+    const configs = {
+      'formation': {
+        labelFr: 'Paiement complet',
+        labelAr: 'دفع كامل',
+        isPeriodic: false,
+        periods: 1,
+      },
+      'mois': {
+        labelFr: 'Paiement mensuel',
+        labelAr: 'دفع شهري',
+        isPeriodic: true,
+        periods: 1,
+        addFn: (date, n = 1) => {
+          const d = new Date(date);
+          d.setMonth(d.getMonth() + n);
+          return d;
+        },
+      },
+      'semaine': {
+        labelFr: 'Paiement hebdomadaire',
+        labelAr: 'دفع أسبوعي',
+        isPeriodic: true,
+        periods: 1,
+        addFn: (date, n = 1) => {
+          const d = new Date(date);
+          d.setDate(d.getDate() + (7 * n));
+          return d;
+        },
+      },
+      'trimestre': {
+        labelFr: 'Paiement trimestriel',
+        labelAr: 'دفع ربع سنوي',
+        isPeriodic: true,
+        periods: 3,
+        addFn: (date, n = 1) => {
+          const d = new Date(date);
+          d.setMonth(d.getMonth() + (3 * n));
+          return d;
+        },
+      },
+      'annee': {
+        labelFr: 'Paiement annuel',
+        labelAr: 'دفع سنوي',
+        isPeriodic: true,
+        periods: 12,
+        addFn: (date, n = 1) => {
+          const d = new Date(date);
+          d.setFullYear(d.getFullYear() + n);
+          return d;
+        },
+      },
+      'seance': {
+        labelFr: 'Paiement par séance',
+        labelAr: 'دفع بالحصة',
+        isPeriodic: true,
+        periods: 1,
+        addFn: (date, n = 1) => {
+          // +7 jours entre les séances par défaut
+          const d = new Date(date);
+          d.setDate(d.getDate() + (7 * n));
+          return d;
+        },
+      },
+      // ✅ NOUVEAU : Paiement par heure
+      'heure': {
+        labelFr: 'Paiement par heure',
+        labelAr: 'دفع بالساعة',
+        isPeriodic: true,
+        periods: 1,
+        addFn: (date, n = 1) => {
+          // +1 heure (utile pour calculer la prochaine échéance)
+          const d = new Date(date);
+          d.setHours(d.getHours() + n);
+          return d;
+        },
+      },
+    };
+    
+    return configs[typePaiement] || configs['formation'];
+  }
+
+  /**
+   * Vérifie si un type de paiement est valide
+   */
+  static isValidType(typePaiement) {
+    const validTypes = [
+      'formation', 'mois', 'semaine', 
+      'trimestre', 'annee', 'seance', 'heure'
+    ];
+    return validTypes.includes(typePaiement);
+  }
+
+  /**
+   * Retourne tous les types valides
+   */
+  static getValidTypes() {
+    return [
+      'formation', 'mois', 'semaine', 
+      'trimestre', 'annee', 'seance', 'heure'
+    ];
+  }
+
+  // ============================================================
   // CRÉER UN PAIEMENT
   // ============================================================
   
@@ -25,6 +138,8 @@ class Paiement {
         montant_a_payer,
         nombre_mois,
         montant_mensuel,
+        nombre_periodes,
+        montant_par_periode,
         montant_restant,
         paiements_effectues,
         date_paiement,
@@ -33,7 +148,7 @@ class Paiement {
         reference_paiement,
         id_paiement_externe, 
         commentaire
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     const [result] = await db.query(query, [
@@ -52,6 +167,9 @@ class Paiement {
       data.montant_a_payer || data.formation_prix,
       data.nombre_mois || 1,
       data.montant_mensuel || null,
+      // ✅ Nouveaux champs
+      data.nombre_periodes || 1,
+      data.montant_par_periode || null,
       data.montant_restant || 0,
       data.paiements_effectues || 0,
       data.date_paiement || null,
@@ -154,8 +272,8 @@ class Paiement {
   }
 
   // ============================================================
-  // ✅ MISE À JOUR AVEC TYPE DE PAIEMENT (CORRIGÉE)
-  // La 1ère tranche est EN ATTENTE de validation admin
+  // ✅ MISE À JOUR AVEC TYPE DE PAIEMENT (GÉNÉRALISÉE)
+  // Supporte : formation, mois, semaine, trimestre, annee, seance
   // ============================================================
   
   static async updateModaliteWithType(
@@ -163,12 +281,23 @@ class Paiement {
     modalite,
     typePaiement,
     montantAPayer,
-    nombreMois,
-    montantMensuel
+    nombrePeriodes,
+    montantParPeriode
   ) {
     console.log('🟢 [Paiement.updateModaliteWithType] Appelée avec:', {
-      paymentId, modalite, typePaiement, montantAPayer, nombreMois, montantMensuel,
+      paymentId,
+      modalite,
+      typePaiement,
+      montantAPayer,
+      nombrePeriodes,
+      montantParPeriode,
     });
+
+    // ✅ Vérifier le type
+    if (!Paiement.isValidType(typePaiement)) {
+      console.log('❌ [updateModaliteWithType] Type invalide:', typePaiement);
+      return false;
+    }
 
     const paiement = await Paiement.getById(paymentId);
     if (!paiement) {
@@ -177,39 +306,51 @@ class Paiement {
     }
 
     const prixTotal = parseFloat(paiement.formation_prix) || 0;
-    
-    let montantEcheance = montantAPayer;
-    let montantMensuelFinal = montantMensuel;
-    let montantRestant = 0;
-    let nombreMoisFinal = nombreMois || 1;
-    let isMensuel = false;
+    const config = Paiement.getTypeConfig(typePaiement);
+    const isPeriodic = config.isPeriodic;
 
-    if (typePaiement === 'mois') {
-      // ✅ Paiement mensuel
-      isMensuel = true;
-      montantMensuelFinal = montantMensuel || (prixTotal / nombreMoisFinal);
-      montantEcheance = montantMensuelFinal;
+    let montantEcheance = montantAPayer;
+    let montantParPeriodeFinal = montantParPeriode;
+    let montantRestant = 0;
+    let nombrePeriodesFinal = nombrePeriodes || 1;
+
+    // ✅ Champs de compatibilité (pour anciens paiements "mois")
+    let nombreMoisCompat = 1;
+    let montantMensuelCompat = null;
+
+    if (isPeriodic) {
+      // ✅ Calcul du montant par période
+      montantParPeriodeFinal = montantParPeriode || (prixTotal / nombrePeriodesFinal);
+      montantEcheance = montantParPeriodeFinal;
       montantRestant = prixTotal - montantEcheance;
+
+      // ✅ Compatibilité : si "mois", remplir aussi nombre_mois/montant_mensuel
+      if (typePaiement === 'mois') {
+        nombreMoisCompat = nombrePeriodesFinal;
+        montantMensuelCompat = montantParPeriodeFinal;
+      } else {
+        nombreMoisCompat = 1;
+        montantMensuelCompat = montantParPeriodeFinal;
+      }
     } else {
-      // ✅ Paiement complet
-      isMensuel = false;
-      montantMensuelFinal = null;
+      // Paiement complet
+      montantParPeriodeFinal = null;
       montantEcheance = prixTotal;
       montantRestant = 0;
-      nombreMoisFinal = 1;
+      nombrePeriodesFinal = 1;
+      nombreMoisCompat = 1;
+      montantMensuelCompat = null;
     }
 
     if (montantRestant < 0) montantRestant = 0;
 
+    console.log('📊 [Calcul] Type:', typePaiement, '| Périodique:', isPeriodic);
     console.log('📊 [Calcul] Prix total:', prixTotal);
+    console.log('📊 [Calcul] Nombre périodes:', nombrePeriodesFinal);
+    console.log('📊 [Calcul] Montant/période:', montantParPeriodeFinal);
     console.log('📊 [Calcul] Échéance:', montantEcheance);
-    console.log('📊 [Calcul] Mensuel:', montantMensuelFinal);
     console.log('📊 [Calcul] Restant:', montantRestant);
-    console.log('📊 [Calcul] Type:', isMensuel ? 'MENSUEL' : 'COMPLET');
 
-    // ✅ LOGIQUE CORRIGÉE :
-    // - Si MENSUEL : montant_paye = 0, la 1ère tranche va en tranche_en_attente
-    // - Si COMPLET : montant_paye = prixTotal (à valider)
     const query = `
       UPDATE paiement SET 
         modalite_paiement = ?,
@@ -218,6 +359,8 @@ class Paiement {
         montant_paye = ?,
         nombre_mois = ?,
         montant_mensuel = ?,
+        nombre_periodes = ?,
+        montant_par_periode = ?,
         montant_restant = ?,
         paiements_effectues = 0,
         tranche_en_attente = ?,
@@ -229,22 +372,22 @@ class Paiement {
 
     const [result] = await db.query(query, [
       modalite,
-      typePaiement || 'formation',
+      typePaiement,
       montantEcheance,
-      // ✅ CORRECTION : mensuel → 0, complet → prixTotal
-      isMensuel ? 0 : prixTotal,
-      nombreMoisFinal,
-      montantMensuelFinal,
+      isPeriodic ? 0 : prixTotal,
+      nombreMoisCompat,
+      montantMensuelCompat,
+      nombrePeriodesFinal,
+      montantParPeriodeFinal,
       montantRestant,
-      // ✅ 1ère tranche en attente pour mensuel
-      isMensuel ? montantEcheance : null,
-      isMensuel ? 1 : 0,
+      isPeriodic ? montantEcheance : null,
+      isPeriodic ? 1 : 0,
       paymentId,
     ]);
 
     console.log('🟢 [updateModaliteWithType] Lignes modifiées:', result.affectedRows);
-    if (isMensuel) {
-      console.log('   ⏳ 1ère tranche mise en attente:', montantEcheance);
+    if (isPeriodic) {
+      console.log(`   ⏳ 1ère tranche (${typePaiement}) mise en attente:`, montantEcheance);
     }
     return result.affectedRows > 0;
   }
@@ -264,7 +407,7 @@ class Paiement {
   }
 
   // ============================================================
-  // SOUMETTRE UNE TRANCHE (2ème, 3ème, ...)
+  // ✅ SOUMETTRE UNE TRANCHE (GÉNÉRALISÉ)
   // ============================================================
   
   static async soumettreTranche(paymentId, montantTranche, quittanceUrl = null) {
@@ -277,8 +420,10 @@ class Paiement {
       return { success: false, message: 'Paiement introuvable' };
     }
 
-    if (paiement.type_paiement !== 'mois') {
-      return { success: false, message: 'Ce paiement n\'est pas mensuel' };
+    // ✅ Vérifier que c'est un paiement périodique (pas formation)
+    const config = Paiement.getTypeConfig(paiement.type_paiement);
+    if (!config.isPeriodic) {
+      return { success: false, message: 'Ce paiement n\'est pas périodique' };
     }
 
     const montantRestant = parseFloat(paiement.montant_restant) || 0;
@@ -328,7 +473,7 @@ class Paiement {
   }
 
   // ============================================================
-  // ✅ VALIDER UNE TRANCHE (appelée par admin)
+  // ✅ VALIDER UNE TRANCHE (GÉNÉRALISÉ - calcule la prochaine date)
   // ============================================================
   
   static async validerTranche(paymentId) {
@@ -347,27 +492,33 @@ class Paiement {
 
     const prixTotal = parseFloat(paiement.formation_prix) || 0;
     const montantPayeActuel = parseFloat(paiement.montant_paye) || 0;
-    const nombreMois = parseInt(paiement.nombre_mois) || 1;
+    const typePaiement = paiement.type_paiement || 'mois';
+    const nombrePeriodes = parseInt(paiement.nombre_periodes) 
+      || parseInt(paiement.nombre_mois) 
+      || 1;
     const paiementsEffectues = parseInt(paiement.paiements_effectues) || 0;
 
     const nouveauMontantPaye = montantPayeActuel + montantTranche;
     const nouveauMontantRestant = Math.max(0, prixTotal - nouveauMontantPaye);
     const nouveauPaiementsEffectues = paiementsEffectues + 1;
 
-    // Prochaine date
+    // ✅ Calcul de la prochaine date selon le type
     let prochaineDate = null;
-    if (nouveauMontantRestant > 0 && nouveauPaiementsEffectues < nombreMois) {
-      const date = new Date();
-      date.setMonth(date.getMonth() + 1);
-      prochaineDate = date.toISOString().slice(0, 10);
+    if (nouveauMontantRestant > 0 && nouveauPaiementsEffectues < nombrePeriodes) {
+      const config = Paiement.getTypeConfig(typePaiement);
+      if (config.isPeriodic && config.addFn) {
+        const date = config.addFn(new Date(), 1);
+        prochaineDate = date.toISOString().slice(0, 10);
+      }
     }
 
-    console.log('📊 [validerTranche] Calcul:');
+    console.log('📊 [validerTranche] Type:', typePaiement);
     console.log('   - Ancien payé:', montantPayeActuel);
     console.log('   - Tranche validée:', montantTranche);
     console.log('   - Nouveau payé:', nouveauMontantPaye);
     console.log('   - Nouveau restant:', nouveauMontantRestant);
-    console.log('   - Effectués:', nouveauPaiementsEffectues, '/', nombreMois);
+    console.log('   - Effectués:', nouveauPaiementsEffectues, '/', nombrePeriodes);
+    console.log('   - Prochaine date:', prochaineDate);
 
     const query = `
       UPDATE paiement SET 
@@ -400,6 +551,7 @@ class Paiement {
         montant_restant: nouveauMontantRestant,
         paiements_effectues: nouveauPaiementsEffectues,
         prochain_paiement_date: prochaineDate,
+        type_paiement: typePaiement,
       },
     };
   }
@@ -447,6 +599,10 @@ class Paiement {
         SUM(CASE WHEN statut_paiement = 'valide' THEN montant_paye ELSE 0 END) as total_montant,
         SUM(CASE WHEN type_paiement = 'mois' THEN 1 ELSE 0 END) as paiements_mensuels,
         SUM(CASE WHEN type_paiement = 'formation' THEN 1 ELSE 0 END) as paiements_complets,
+        SUM(CASE WHEN type_paiement = 'semaine' THEN 1 ELSE 0 END) as paiements_hebdo,
+        SUM(CASE WHEN type_paiement = 'trimestre' THEN 1 ELSE 0 END) as paiements_trimestriels,
+        SUM(CASE WHEN type_paiement = 'annee' THEN 1 ELSE 0 END) as paiements_annuels,
+        SUM(CASE WHEN type_paiement = 'seance' THEN 1 ELSE 0 END) as paiements_seances,
         SUM(montant_restant) as total_restant,
         SUM(CASE WHEN tranche_en_attente IS NOT NULL THEN 1 ELSE 0 END) as tranches_en_attente
       FROM paiement
