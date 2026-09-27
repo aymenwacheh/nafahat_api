@@ -200,6 +200,98 @@ class Paiement {
     return rows;
   }
 
+  // ============================================================
+  // NOTIFICATIONS UTILISATEUR (échéances + validations admin)
+  // ============================================================
+
+  static async getUserNotifications(adherentId) {
+    const [dueRows] = await db.query(
+      `SELECT
+          p.id AS payment_id,
+          p.formation_id,
+          p.formation_titre_fr,
+          p.formation_titre_ar,
+          p.type_paiement,
+          p.montant_a_payer,
+          p.formation_devise,
+          p.prochain_paiement_date,
+          DATE_FORMAT(p.prochain_paiement_date, '%Y-%m-%d') AS prochain_paiement_date_key,
+          DATEDIFF(DATE(p.prochain_paiement_date), CURDATE()) AS days_remaining
+       FROM paiement p
+       WHERE p.adherent_id = ?
+         AND p.prochain_paiement_date IS NOT NULL
+         AND DATE(p.prochain_paiement_date) BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)
+         AND COALESCE(p.montant_restant, 0) > 0
+         AND COALESCE(p.tranche_en_attente, 0) = 0
+       ORDER BY p.prochain_paiement_date ASC`,
+      [adherentId]
+    );
+
+    const [validationRows] = await db.query(
+      `SELECT
+          pv.id AS validation_id,
+          pv.paiement_id AS payment_id,
+          pv.date_validation,
+          pv.created_at AS validation_created_at,
+          p.formation_id,
+          p.formation_titre_fr,
+          p.formation_titre_ar,
+          p.formation_devise,
+          p.type_paiement,
+          p.montant_a_payer
+       FROM paiement_validation pv
+       INNER JOIN paiement p ON p.id = pv.paiement_id
+       WHERE p.adherent_id = ?
+         AND pv.statut = 'valide'
+         AND COALESCE(pv.date_validation, pv.created_at) >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+       ORDER BY COALESCE(pv.date_validation, pv.created_at) DESC
+       LIMIT 20`,
+      [adherentId]
+    );
+
+    const dueNotifications = dueRows.map((row) => {
+      const days = Math.max(0, parseInt(row.days_remaining, 10) || 0);
+      const date = row.prochain_paiement_date_key || '';
+      return {
+        id: `due:${row.payment_id}:${date}`,
+        type: 'payment_due',
+        payment_id: row.payment_id,
+        formation_id: row.formation_id,
+        formation_titre_fr: row.formation_titre_fr,
+        formation_titre_ar: row.formation_titre_ar,
+        type_paiement: row.type_paiement,
+        montant_a_payer: row.montant_a_payer,
+        formation_devise: row.formation_devise,
+        prochain_paiement_date: row.prochain_paiement_date,
+        days_remaining: days,
+        message_fr: days === 0
+          ? "Votre prochain paiement arrive à échéance aujourd'hui."
+          : `Il vous reste ${days} jour${days > 1 ? 's' : ''} avant votre prochain paiement.`,
+        message_ar: days === 0
+          ? 'موعد دفعتك القادمة هو اليوم.'
+          : `بقي ${days} يوم${days > 1 ? 'اً' : ''} على موعد دفعتك القادمة.`,
+      };
+    });
+
+    const validationNotifications = validationRows.map((row) => ({
+      id: `validated:${row.validation_id}`,
+      type: 'payment_validated',
+      payment_id: row.payment_id,
+      validation_id: row.validation_id,
+      formation_id: row.formation_id,
+      formation_titre_fr: row.formation_titre_fr,
+      formation_titre_ar: row.formation_titre_ar,
+      type_paiement: row.type_paiement,
+      montant_a_payer: row.montant_a_payer,
+      formation_devise: row.formation_devise,
+      date_validation: row.date_validation || row.validation_created_at,
+      message_fr: 'Votre paiement a été validé par l’administrateur.',
+      message_ar: 'تمت المصادقة على دفعتك من طرف الإدارة.',
+    }));
+
+    return [...dueNotifications, ...validationNotifications];
+  }
+
   static async getByFormation(formationId) {
     const [rows] = await db.query(
       `SELECT p.*, a.nom_prenom as adherent_nom, a.whatsapp as adherent_whatsapp 

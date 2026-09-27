@@ -471,6 +471,29 @@ class PaymentController {
   }
 
   // ============================================================
+  // NOTIFICATIONS DE PAIEMENT D'UN ADHÉRENT
+  // GET /api/payments/user/:userId/notifications
+  // ============================================================
+
+  static async getUserNotifications(req, res) {
+    try {
+      const { userId } = req.params;
+      const notifications = await Paiement.getUserNotifications(userId);
+      return res.status(200).json({
+        success: true,
+        count: notifications.length,
+        data: notifications,
+      });
+    } catch (error) {
+      console.error('❌ [getUserNotifications] Erreur:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erreur: ' + error.message,
+      });
+    }
+  }
+
+  // ============================================================
   // RÉCUPÉRER LES PAIEMENTS D'UNE FORMATION
   // ============================================================
   

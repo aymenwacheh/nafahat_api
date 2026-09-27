@@ -234,6 +234,7 @@ app.get('/api/test', (req, res) => {
             '/api/chatbot',
             '/api/cibles',
             '/api/payments',
+            '/api/payments/user/:userId/notifications',
             '/api/about'
         ]
     });
@@ -552,6 +553,7 @@ console.log('   ✅ /api/admin');
 console.log('   ✅ /api/chatbot');
 console.log('   ✅ /api/cibles');
 console.log('   ✅ /api/payments');
+console.log('   ✅ /api/payments/user/:userId/notifications');
 console.log('   ✅ /api/about');
 
 console.log('\n🌐 ROUTES WEB:');

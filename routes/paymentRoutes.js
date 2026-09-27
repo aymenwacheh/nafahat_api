@@ -12,7 +12,8 @@ router.post('/confirm', PaymentController.confirmPayment);
 // Upload quittance initiale
 router.post('/upload-quittance', PaymentController.uploadQuittance);
 
-// Récupérer paiements
+// Récupérer paiements et notifications utilisateur
+router.get('/user/:userId/notifications', PaymentController.getUserNotifications);
 router.get('/user/:userId', PaymentController.getUserPayments);
 router.get('/formation/:formationId', PaymentController.getFormationPayments);
 router.get('/stats', PaymentController.getStats);
